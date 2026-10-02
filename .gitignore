@@ -1,7 +1,6 @@
 __pycache__/ 
 *.pyc 
 *.db 
-*.sqlite 
 .env 
 app/static/uploads/ 
 .pytest_cache/ 
