@@ -1,0 +1,10 @@
+def test_create(auth_client,station):
+ r=auth_client.post('/api/reports',data={'station_id':station.id,'fuel_status':'distribution','queue_status':'short'});assert r.status_code==200
+def test_verify(auth_client,station):
+ r=auth_client.post('/api/reports',data={'station_id':station.id,'fuel_status':'distribution','queue_status':'short'});assert auth_client.post(f"/api/reports/{r.json()['report_id']}/verify",json={'kind':'confirm'}).status_code==200
+def test_delete(auth_client,station):
+ r=auth_client.post('/api/reports',data={'station_id':station.id,'fuel_status':'unknown','queue_status':'unknown'});assert auth_client.delete(f"/api/reports/{r.json()['report_id']}").status_code==200
+def test_abuse(auth_client,station):
+ r=auth_client.post('/api/reports',data={'station_id':station.id,'fuel_status':'unknown','queue_status':'unknown'});assert auth_client.post(f"/api/reports/{r.json()['report_id']}/abuse",json={'reason':'Spam'}).status_code==200
+def test_photo(auth_client,station):
+ r=auth_client.post('/api/reports',data={'station_id':station.id,'fuel_status':'unknown','queue_status':'unknown'},files={'photo':('a.jpg',b'jpg','image/jpeg')});assert r.status_code==200

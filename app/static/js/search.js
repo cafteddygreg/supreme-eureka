@@ -1,0 +1,1 @@
+let timer;function handleSearch(v){clearTimeout(timer);timer=setTimeout(()=>document.querySelectorAll('.station-card').forEach(x=>x.hidden=v.trim()&&!x.dataset.search.toLowerCase().includes(v.trim().toLowerCase())),300)}
