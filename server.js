@@ -2,9 +2,11 @@ import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
+import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { OAuth2Client } from 'google-auth-library';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +14,13 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
+const SECRET_KEY = process.env.SECRET_KEY || 'igitoro-secret-key-live';
+
+app.set('trust proxy', 1);
+
+export function isProductionEnv() {
+  return process.env.NODE_ENV === 'production';
+}
 
 // Upload configuration
 const uploadDir = path.join(__dirname, 'static', 'uploads');
@@ -49,12 +58,27 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(
   session({
-    secret: process.env.SECRET_KEY || 'igitoro-secret-key-live',
+    secret: SECRET_KEY,
     resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false, maxAge: 30 * 24 * 60 * 60 * 1000 }
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    }
   })
 );
+
+// Adapter dynamiquement les attributs de cookie en HTTPS (iframe preview / production Railway)
+app.use((req, res, next) => {
+  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  if (isHttps && req.session && req.session.cookie) {
+    req.session.cookie.secure = true;
+    req.session.cookie.sameSite = 'none';
+  }
+  next();
+});
 
 // Dynamic Rate Limiter
 class DynamicRateLimiter {
@@ -79,9 +103,155 @@ class DynamicRateLimiter {
 }
 const limiter = new DynamicRateLimiter();
 
+// ================= OAuth 2.0 / OpenID Connect Verification =================
+const googleOAuthClient = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID || '',
+  process.env.GOOGLE_CLIENT_SECRET || ''
+);
+
+/**
+ * Vérifie en développement local uniquement un jeton JWT OIDC de test signé par HMAC-SHA256.
+ * STRICTEMENT DÉSACTIVÉ EN PRODUCTION (NODE_ENV=production ou APP_ENV=production).
+ */
+function verifyLocalDevTestJwt(token) {
+  if (isProductionEnv()) {
+    throw new Error('Les jetons de test locaux sont strictement interdits en production.');
+  }
+  if (process.env.ALLOW_DEV_OIDC_TEST_TOKEN === 'false') {
+    throw new Error('Le mode de test OIDC local est désactivé.');
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Format JWT invalide');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  const expectedSig = crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest('base64url');
+
+  const sigBuf = Buffer.from(signatureB64);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    throw new Error('Signature JWT de test invalide');
+  }
+
+  const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8'));
+  if (header.alg !== 'HS256' || header.kid !== 'local-dev-test-only') {
+    throw new Error('En-tête JWT non autorisé');
+  }
+
+  const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+  const validIssuers = ['https://accounts.google.com', 'accounts.google.com'];
+  if (!validIssuers.includes(payload.iss)) {
+    throw new Error('Émetteur (iss) OIDC invalide');
+  }
+
+  const expectedAud = process.env.GOOGLE_CLIENT_ID || 'igitoro-local-test-client';
+  if (payload.aud !== expectedAud) {
+    throw new Error('Audience (aud) OIDC invalide');
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!payload.exp || payload.exp < nowSec) {
+    throw new Error('Jeton OIDC expiré');
+  }
+
+  if (!payload.sub || typeof payload.sub !== 'string' || payload.sub.trim().length < 3) {
+    throw new Error('Identifiant Google (sub) manquant ou invalide');
+  }
+
+  return {
+    sub: payload.sub.trim(),
+    email: payload.email || null,
+    email_verified: payload.email_verified !== false,
+    name: payload.name || 'Utilisateur Google'
+  };
+}
+
+/**
+ * Vérifie de manière cryptographique un ID Token Google OpenID Connect côté serveur.
+ * Rejette catégoriquement tout nom saisi manuellement, toute chaîne "mock:..." ou tout jeton invalide.
+ */
+export async function verifyGoogleOidcToken(credential) {
+  if (!credential || typeof credential !== 'string' || !credential.trim()) {
+    const err = new Error('Jeton Google OIDC manquant');
+    err.status = 400;
+    throw err;
+  }
+
+  const rawToken = credential.trim();
+
+  // Interdiction absolue des chaînes mock:... ou de simples noms saisis par l'utilisateur
+  if (rawToken.startsWith('mock:') || !rawToken.includes('.')) {
+    const err = new Error('Authentification refusée : un véritable jeton OAuth 2.0 / OpenID Connect signé par Google est requis.');
+    err.status = 401;
+    throw err;
+  }
+
+  // En développement/test local uniquement (et jamais en production), vérifier si c'est un JWT de test signé par SECRET_KEY
+  if (!isProductionEnv() && process.env.ALLOW_DEV_OIDC_TEST_TOKEN !== 'false') {
+    const parts = rawToken.split('.');
+    if (parts.length === 3) {
+      let isLocalTestKid = false;
+      try {
+        const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+        isLocalTestKid = header && header.kid === 'local-dev-test-only';
+      } catch (_) {}
+
+      if (isLocalTestKid) {
+        try {
+          return verifyLocalDevTestJwt(rawToken);
+        } catch (devErr) {
+          const err = new Error(`Jeton OIDC invalide : ${devErr.message}`);
+          err.status = 401;
+          throw err;
+        }
+      }
+    }
+  }
+
+  // Vérification officielle Google OAuth 2.0 / OpenID Connect (RS256 JWKS Google)
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    const err = new Error('GOOGLE_CLIENT_ID non configuré sur le serveur pour vérifier le jeton Google OIDC.');
+    err.status = 401;
+    throw err;
+  }
+
+  try {
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: rawToken,
+      audience: clientId
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.sub) {
+      throw new Error('Payload Google OIDC sans identifiant sub');
+    }
+
+    const validIssuers = ['https://accounts.google.com', 'accounts.google.com'];
+    if (!validIssuers.includes(payload.iss)) {
+      throw new Error('Émetteur Google invalide');
+    }
+
+    return {
+      sub: payload.sub,
+      email: payload.email || null,
+      email_verified: Boolean(payload.email_verified),
+      name: payload.name || payload.given_name || 'Utilisateur Google'
+    };
+  } catch (verifyErr) {
+    const err = new Error('Jeton Google OAuth 2.0 / OpenID Connect invalide ou expiré.');
+    err.status = 401;
+    throw err;
+  }
+}
+
 // In-Memory Database
 let nextUserId = 2;
-let nextStationId = 29; // Fixed: initial stations have IDs 1 through 28
+let nextStationId = 29;
 let nextReportId = 3;
 let nextConfirmationId = 3;
 let nextAbuseId = 1;
@@ -91,7 +261,7 @@ let nextClaimId = 1;
 const users = [
   {
     id: 1,
-    google_sub: 'demo',
+    google_sub: 'google-oidc-admin-seed-1',
     name: 'Tedd Greg',
     email: 'tedd@example.bi',
     is_admin: true,
@@ -99,6 +269,57 @@ const users = [
     created_at: new Date().toISOString()
   }
 ];
+
+function shouldGrantAdmin(sub, email) {
+  const adminSubs = (process.env.ADMIN_GOOGLE_SUBS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const adminEmails = (process.env.ADMIN_EMAILS || 'bagloriose18@gmail.com')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (sub && adminSubs.includes(sub)) return true;
+  if (email && adminEmails.includes(email.toLowerCase())) return true;
+  return false;
+}
+
+function findOrCreateGoogleUser(verifiedProfile) {
+  const { sub, name, email } = verifiedProfile;
+
+  // Recherche par le `sub` Google stable et immuable
+  let user = users.find(u => u.google_sub === sub);
+  let isNewUser = false;
+
+  if (!user) {
+    isNewUser = true;
+    user = {
+      id: nextUserId++,
+      google_sub: sub,
+      name: name || 'Utilisateur Google',
+      email: email || null,
+      is_admin: shouldGrantAdmin(sub, email),
+      is_suspended: false,
+      created_at: new Date().toISOString()
+    };
+    users.push(user);
+  } else {
+    if (user.is_suspended) {
+      const err = new Error('Ce compte a été suspendu par l’administration.');
+      err.status = 403;
+      throw err;
+    }
+    // Mise à jour des métadonnées de profil tout en conservant le même compte et ID
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (shouldGrantAdmin(sub, email)) {
+      user.is_admin = true;
+    }
+  }
+
+  return { user, isNewUser };
+}
 
 const initialStations = [
   // Mukaza
@@ -274,7 +495,7 @@ function getCurrentUser(req) {
 function requireAuth(req, res, next) {
   const user = getCurrentUser(req);
   if (!user) {
-    return res.status(401).json({ detail: 'Connexion requise. Veuillez vous connecter dans l’onglet Profil.' });
+    return res.status(401).json({ detail: 'Authentification Google requise. Veuillez vous connecter dans l’onglet Profil.' });
   }
   req.user = user;
   next();
@@ -291,8 +512,18 @@ function requireAdmin(req, res, next) {
 
 function ctx(req) {
   return {
-    user: getCurrentUser(req)
+    user: getCurrentUser(req),
+    googleClientId: process.env.GOOGLE_CLIENT_ID || ''
   };
+}
+
+function getRedirectUri(req) {
+  if (process.env.APP_URL) {
+    return `${process.env.APP_URL.replace(/\/$/, '')}/auth/callback`;
+  }
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${proto}://${host}/auth/callback`;
 }
 
 // ================= Web Routes =================
@@ -516,10 +747,8 @@ app.get('/api/stations/:id', (req, res) => {
   });
 });
 
-app.post('/api/stations', (req, res) => {
-  let user = getCurrentUser(req);
-  const userKey = user ? user.id : (req.ip || 'guest');
-  if (!limiter.allow(`st_add:${userKey}`, 1)) {
+app.post('/api/stations', requireAuth, (req, res) => {
+  if (!limiter.allow(`st_add:${req.user.id}`, 1)) {
     return res.status(429).json({ detail: 'Trop de propositions de stations récemment. Veuillez patienter.' });
   }
 
@@ -578,21 +807,8 @@ app.post('/api/stations/:id/claim', requireAuth, (req, res) => {
 });
 
 // ================= API: Reports =================
-app.post('/api/reports', upload.single('photo'), (req, res) => {
-  let user = getCurrentUser(req);
-  if (!user) {
-    user = {
-      id: nextUserId++,
-      google_sub: 'guest-' + Date.now(),
-      name: 'Utilisateur invité',
-      email: null,
-      is_admin: false,
-      is_suspended: false,
-      created_at: new Date().toISOString()
-    };
-    users.push(user);
-    req.session.user_id = user.id;
-  }
+app.post('/api/reports', requireAuth, upload.single('photo'), (req, res) => {
+  const user = req.user;
 
   if (!limiter.allow(`r:${user.id}`)) {
     return res.status(429).json({ detail: 'Trop de signalements récemment. Veuillez patienter.' });
@@ -709,46 +925,129 @@ app.post('/api/reports/:id/abuse', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ================= API: Auth =================
-app.post('/api/auth/google', (req, res) => {
-  const payload = req.body || {};
-  const cred = payload.credential || '';
-  let sub = '', name = 'Utilisateur', email = null;
+// ================= API: Auth (Google OAuth 2.0 / OpenID Connect) =================
 
-  if (cred.startsWith('mock:')) {
-    const parts = cred.split(':');
-    sub = parts[1] || 'mock-user-1';
-    name = parts[2] || 'Utilisateur';
-  } else if (cred) {
-    sub = 'user-' + Buffer.from(cred).toString('hex').slice(0, 16);
-    name = 'Utilisateur Google';
-  } else {
-    return res.status(400).json({ detail: 'Jeton manquant' });
+// 1. Générer l'URL d'autorisation OAuth 2.0 / OpenID Connect de Google
+app.get('/api/auth/google/url', (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    return res.status(503).json({
+      detail: 'La variable GOOGLE_CLIENT_ID doit être configurée sur le serveur pour activer Google OAuth 2.0.'
+    });
   }
 
-  let user = users.find(u => u.google_sub === sub);
-  if (!user) {
-    user = {
-      id: nextUserId++,
-      google_sub: sub,
-      name,
-      email,
-      is_admin: users.length === 0,
-      is_suspended: false,
-      created_at: new Date().toISOString()
-    };
-    users.push(user);
-  } else {
-    user.name = name;
-    if (email) user.email = email;
-  }
+  const redirectUri = req.query.redirect_uri
+    ? String(req.query.redirect_uri)
+    : getRedirectUri(req);
 
-  req.session.user_id = user.id;
-  res.json({ ok: true, user: { id: user.id, name: user.name, is_admin: user.is_admin } });
+  const state = crypto.randomBytes(24).toString('hex');
+  req.session.oauth_state = state;
+  req.session.oauth_redirect_uri = redirectUri;
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    prompt: 'select_account'
+  });
+
+  res.json({
+    url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+  });
+});
+
+// 2. Callback OAuth 2.0 / OpenID Connect après redirection Google
+const handleGoogleCallback = async (req, res) => {
+  try {
+    const { code, state, error } = req.query;
+    if (error) {
+      return res.status(400).send('Authentification Google annulée ou refusée.');
+    }
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ detail: 'Code d’autorisation OAuth 2.0 manquant' });
+    }
+    if (req.session.oauth_state && state !== req.session.oauth_state) {
+      return res.status(401).json({ detail: 'État OAuth 2.0 (state CSRF) invalide' });
+    }
+    delete req.session.oauth_state;
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return res.status(503).json({
+        detail: 'GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET sont requis pour échanger le code OAuth 2.0.'
+      });
+    }
+
+    const redirectUri = req.session.oauth_redirect_uri || getRedirectUri(req);
+    const client = new OAuth2Client(clientId, clientSecret, redirectUri);
+    const { tokens } = await client.getToken(code);
+
+    if (!tokens || !tokens.id_token) {
+      return res.status(401).json({ detail: 'Aucun id_token OpenID Connect reçu de Google' });
+    }
+
+    const verifiedProfile = await verifyGoogleOidcToken(tokens.id_token);
+    const { user } = findOrCreateGoogleUser(verifiedProfile);
+    req.session.user_id = user.id;
+
+    res.send(`<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Connexion réussie - Igitoro Live</title></head>
+<body style="font-family: sans-serif; text-align: center; padding: 40px;">
+  <p>Authentification Google réussie. Redirection en cours…</p>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+      window.close();
+    } else {
+      window.location.href = '/profil';
+    }
+  </script>
+</body>
+</html>`);
+  } catch (err) {
+    const status = err.status || 401;
+    res.status(status).json({ detail: err.message || 'Échec de la vérification Google OAuth 2.0' });
+  }
+};
+
+app.get(['/auth/callback', '/auth/callback/', '/api/auth/google/callback'], handleGoogleCallback);
+
+// 3. Vérification directe d'un ID Token Google OpenID Connect (Google Identity Services)
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const credential = payload.credential || payload.id_token || '';
+
+    const verifiedProfile = await verifyGoogleOidcToken(credential);
+    const { user, isNewUser } = findOrCreateGoogleUser(verifiedProfile);
+
+    req.session.user_id = user.id;
+    res.json({
+      ok: true,
+      is_new_user: isNewUser,
+      user: {
+        id: user.id,
+        sub: user.google_sub,
+        name: user.name,
+        is_admin: user.is_admin
+      }
+    });
+  } catch (err) {
+    const status = err.status || 401;
+    res.status(status).json({ detail: err.message || 'Jeton Google invalide' });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
+  if (!req.session) {
+    return res.json({ ok: true });
+  }
   req.session.destroy(() => {
+    res.clearCookie('connect.sid');
     res.json({ ok: true });
   });
 });
@@ -769,6 +1068,7 @@ app.delete('/api/auth/account', requireAuth, (req, res) => {
   logAction(req, 'Compte supprimé', 'user', req.user.id, 'Anonymisation des données utilisateur');
 
   req.session.destroy(() => {
+    res.clearCookie('connect.sid');
     res.json({ ok: true });
   });
 });
@@ -942,6 +1242,10 @@ app.use((err, req, res, next) => {
 });
 
 // Start Server
-app.listen(PORT, HOST, () => {
-  console.log(`Igitoro Live server running on http://${HOST}:${PORT}`);
-});
+if (process.env.SKIP_SERVER_LISTEN !== 'true') {
+  app.listen(PORT, HOST, () => {
+    console.log(`Igitoro Live server running on http://${HOST}:${PORT}`);
+  });
+}
+
+export { app };

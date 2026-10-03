@@ -2,6 +2,16 @@
 <h1>Nouveau signalement</h1>
 <p class="muted" style="margin-bottom: 16px;">Partagez votre observation en direct pour aider la communauté à Bujumbura.</p>
 
+<% if (!user) { %>
+  <div class="card" style="border-left: 4px solid var(--amber); background: var(--amber-soft); margin-bottom: 16px;">
+    <strong style="color: var(--amber-dark); display: block; margin-bottom: 4px;">🔐 Connexion Google requise pour envoyer un signalement</strong>
+    <p style="margin: 0 0 10px; font-size: 0.86rem; color: var(--ink-secondary);">
+      Pour garantir la fiabilité de la plateforme, seuls les utilisateurs authentifiés via Google (OAuth 2.0 / OpenID Connect) peuvent publier une observation.
+    </p>
+    <a href="/profil" class="btn btn-primary" style="font-size: 0.85rem; padding: 8px 14px;">Se connecter avec Google →</a>
+  </div>
+<% } %>
+
 <form id="report-form" class="card" onsubmit="submitReport(event)">
   <label style="font-weight: 600;">Station-service
     <select name="station_id" id="report_station_id" required style="margin-top: 6px;">
