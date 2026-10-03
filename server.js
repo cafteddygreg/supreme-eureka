@@ -705,6 +705,25 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Routes racines pour PWA, manifest et icônes d'écran d'accueil (iOS / Android)
+app.get('/manifest.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'static', 'manifest.json'));
+});
+
+app.get('/sw.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'static', 'sw.js'));
+});
+
+app.get(['/apple-touch-icon.png', '/apple-touch-icon-precomposed.png'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'static', 'icons', 'icon-180.png'));
+});
+
+app.get('/favicon.ico', (req, res) => {
+  res.type('image/png');
+  res.sendFile(path.join(__dirname, 'static', 'icons', 'favicon-32.png'));
+});
+
 // ================= API: Stations =================
 app.get('/api/stations', (req, res) => {
   const q = (req.query.q || '').toString().toLowerCase().trim();
@@ -941,15 +960,18 @@ app.get('/api/auth/google/url', (req, res) => {
     : getRedirectUri(req);
 
   const state = crypto.randomBytes(24).toString('hex');
+  const nonce = crypto.randomBytes(24).toString('hex');
   req.session.oauth_state = state;
   req.session.oauth_redirect_uri = redirectUri;
 
+  const hasSecret = Boolean(process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET.trim());
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    response_type: 'code',
+    response_type: hasSecret ? 'code' : 'id_token',
     scope: 'openid email profile',
     state,
+    nonce,
     prompt: 'select_account'
   });
 
@@ -965,25 +987,76 @@ const handleGoogleCallback = async (req, res) => {
     if (error) {
       return res.status(400).send('Authentification Google annulée ou refusée.');
     }
-    if (!code || typeof code !== 'string') {
-      return res.status(400).json({ detail: 'Code d’autorisation OAuth 2.0 manquant' });
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+    const redirectUri = req.session.oauth_redirect_uri || getRedirectUri(req);
+
+    // Si aucun code n'est dans la query string, Google a renvoyé #id_token=... dans le fragment d'URL (flux OIDC id_token sans secret)
+    if (!code) {
+      return res.send(`<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Vérification Google OIDC - Igitoro Live</title></head>
+<body style="font-family: sans-serif; text-align: center; padding: 40px; color: #1A3C2A;">
+  <p id="status-msg">Vérification sécurisée de votre compte Google…</p>
+  <script>
+    (async function() {
+      const hash = window.location.hash ? window.location.hash.substring(1) : '';
+      const params = new URLSearchParams(hash);
+      const idToken = params.get('id_token');
+      const statusEl = document.getElementById('status-msg');
+      if (!idToken) {
+        statusEl.textContent = 'Jeton Google manquant. Redirection…';
+        setTimeout(() => { window.location.href = '/profil'; }, 1200);
+        return;
+      }
+      try {
+        const r = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: idToken })
+        });
+        const d = await r.json();
+        if (r.ok) {
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+            window.close();
+          } else {
+            window.location.href = '/profil';
+          }
+        } else {
+          statusEl.textContent = d.detail || 'Échec de la vérification Google OIDC.';
+        }
+      } catch (e) {
+        statusEl.textContent = 'Erreur réseau lors de la vérification Google.';
+      }
+    })();
+  </script>
+</body>
+</html>`);
     }
+
+    // Si un code OAuth 2.0 est présent mais que GOOGLE_CLIENT_SECRET n'est pas configuré, basculer automatiquement vers le flux OIDC id_token
+    if (!clientSecret && clientId) {
+      const fallbackParams = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'id_token',
+        scope: 'openid email profile',
+        state: String(state || crypto.randomBytes(16).toString('hex')),
+        nonce: crypto.randomBytes(16).toString('hex'),
+        prompt: 'select_account'
+      });
+      return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${fallbackParams.toString()}`);
+    }
+
     if (req.session.oauth_state && state !== req.session.oauth_state) {
       return res.status(401).json({ detail: 'État OAuth 2.0 (state CSRF) invalide' });
     }
     delete req.session.oauth_state;
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    if (!clientId || !clientSecret) {
-      return res.status(503).json({
-        detail: 'GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET sont requis pour échanger le code OAuth 2.0.'
-      });
-    }
-
-    const redirectUri = req.session.oauth_redirect_uri || getRedirectUri(req);
     const client = new OAuth2Client(clientId, clientSecret, redirectUri);
-    const { tokens } = await client.getToken(code);
+    const { tokens } = await client.getToken(String(code));
 
     if (!tokens || !tokens.id_token) {
       return res.status(401).json({ detail: 'Aucun id_token OpenID Connect reçu de Google' });

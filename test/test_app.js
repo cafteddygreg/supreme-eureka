@@ -116,6 +116,28 @@ async function runTests() {
     assert.strictEqual(data.status, 'ok');
   });
 
+  await test('Manifest PWA et icônes Pompe à essence (180x180, 192x192, 512x512, SVG) sont servis avec HTTP 200', async () => {
+    const manifestRes = await fetch(`${BASE_URL}/static/manifest.json`);
+    assert.strictEqual(manifestRes.status, 200);
+    const manifest = await manifestRes.json();
+    assert.strictEqual(manifest.short_name, 'Igitoro');
+    assert(manifest.icons.length >= 3);
+
+    for (const iconPath of [
+      '/static/icons/icon-180.png',
+      '/static/icons/icon-192.png',
+      '/static/icons/icon-512.png',
+      '/static/icons/icon-maskable-512.png',
+      '/static/icons/icon.svg',
+      '/apple-touch-icon.png'
+    ]) {
+      const iconRes = await fetch(`${BASE_URL}${iconPath}`);
+      assert.strictEqual(iconRes.status, 200, `Échec sur ${iconPath}`);
+      const buf = await iconRes.arrayBuffer();
+      assert(buf.byteLength > 200, `Fichier icône vide : ${iconPath}`);
+    }
+  });
+
   // ================= 2. API Stations =================
   await test('GET /api/stations retourne la liste des stations', async () => {
     const res = await fetch(`${BASE_URL}/api/stations`);

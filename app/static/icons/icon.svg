@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#26583E"/>
+      <stop offset="100%" stop-color="#143022"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="28" y="28" width="456" height="456" rx="92" fill="none" stroke="#FBD368" stroke-opacity="0.4" stroke-width="8"/>
+  <!-- Tuyau et pistolet -->
+  <path d="M312 260 H352 V345 H386 V210 L348 172 L326 190" fill="none" stroke="#F5B841" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Corps de la pompe -->
+  <rect x="148" y="132" width="164" height="248" rx="28" fill="#FCFAF5"/>
+  <path d="M148 160 C148 144.5 160.5 132 176 132 H284 C299.5 132 312 144.5 312 160 V266 H148 Z" fill="#E63946"/>
+  <rect x="146" y="258" width="168" height="14" rx="6" fill="#FBD368"/>
+  <!-- Écran compteur -->
+  <rect x="172" y="162" width="116" height="72" rx="12" fill="#FCFAF5"/>
+  <rect x="182" y="172" width="96" height="52" rx="8" fill="#162A20"/>
+  <rect x="198" y="186" width="14" height="24" rx="4" fill="#FBD368"/>
+  <rect x="223" y="186" width="14" height="24" rx="4" fill="#FBD368"/>
+  <rect x="248" y="186" width="14" height="24" rx="4" fill="#FBD368"/>
+  <!-- Goutte de carburant -->
+  <path d="M230 290 C230 290 198 326 198 344 A32 32 0 1 0 262 344 C262 326 230 290 230 290 Z" fill="#26583E"/>
+  <circle cx="220" cy="348" r="8" fill="#FBD368"/>
+  <!-- Socle -->
+  <rect x="128" y="368" width="204" height="28" rx="12" fill="#FBD368"/>
+</svg>
