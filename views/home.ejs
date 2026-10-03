@@ -88,9 +88,14 @@
     </div>
   </div>
   
-  <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--muted);">
-    <span id="resultsCount"><strong><%= stations.length %></strong> stations répertoriées</span>
-    <span id="activeCommuneLabel" style="font-size: 0.8rem; font-weight: 600; color: var(--pine);"></span>
+  <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 0.85rem; color: var(--muted);">
+    <div>
+      <span id="resultsCount"><strong><%= stations.length %></strong> stations répertoriées</span>
+      <span id="activeCommuneLabel" style="font-size: 0.8rem; font-weight: 600; color: var(--pine); margin-left: 6px;"></span>
+    </div>
+    <a href="/partager" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius-sm); background: var(--pine-50); color: var(--pine-700); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.8rem;">
+      🤝 Partager Igitoro Live
+    </a>
   </div>
 </section>
 

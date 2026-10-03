@@ -1,0 +1,723 @@
+<%- include('partials/header', {
+  title: shareTitle || 'Partager Igitoro Live — Tu cherches. Tu observes. Tu aides.',
+  ogTitle: shareTitle || 'Igitoro Live — Tu cherches. Tu observes. Tu aides.',
+  ogDescription: shareDescription || 'Aidez quelqu’un à trouver du carburant à Bujumbura et faites circuler les observations utiles de la communauté.',
+  canonicalUrl: canonicalUrl
+}) %>
+<link rel="stylesheet" href="/static/css/share.css">
+
+<div class="share-page-wrapper" id="shareAppRoot"
+     data-public-origin="<%= publicOrigin %>"
+     data-initial-context="<%= initialContextType %>"
+     data-initial-station-id="<%= selectedStation ? selectedStation.id : '' %>"
+     data-initial-zone="<%= selectedZone || '' %>">
+
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+    <a href="<%= backUrl || '/' %>" id="shareBackTopLink" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; color: var(--pine);">
+      ← Retour
+    </a>
+    <span style="font-size: var(--text-xs); color: var(--muted);">
+      Entraide citoyenne · Aucune donnée personnelle exposée
+    </span>
+  </div>
+
+  <!-- En-tête & Message central : les 3 profils en même temps -->
+  <section class="share-hero" aria-labelledby="share-main-heading">
+    <span class="share-hero-kicker">🤝 ENTRAIDE COMMUNAUTAIRE · BUJUMBURA 🇧🇮</span>
+    <h1 id="share-main-heading">Partager Igitoro Live</h1>
+    <p>Aidez quelqu’un à trouver du carburant et faites circuler les informations utiles.</p>
+    <p style="font-weight: 700; color: #FBD368; margin-bottom: 8px;">
+      « Tu cherches. Tu observes. Tu aides. »
+    </p>
+
+    <div class="share-pillars">
+      <div class="share-pillar-card">
+        <strong>1. Pour celui qui cherche</strong>
+        Tu cherches du carburant ? Consulte les observations récentes avant de te déplacer.
+      </div>
+      <div class="share-pillar-card">
+        <strong>2. Pour celui qui peut aider</strong>
+        Tu viens de voir une station approvisionnée, une file ou une nouvelle information ? Signale ou confirme.
+      </div>
+      <div class="share-pillar-card">
+        <strong>3. Pour diffuser l’outil</strong>
+        Aide quelqu’un autour de toi en lui faisant découvrir Igitoro Live.
+      </div>
+    </div>
+  </section>
+
+  <!-- Option rapide : Partager partout (Web Share natif + fallback) -->
+  <section class="share-everywhere-banner" aria-label="Partage rapide universel">
+    <div>
+      <strong style="display: block; color: var(--pine-dark); font-size: var(--text-base);">
+        📤 Partager partout en un geste
+      </strong>
+      <span id="nativeCapabilityLabel" style="font-size: var(--text-xs); color: var(--ink-secondary);">
+        Vérification des capacités de partage de votre appareil…
+      </span>
+    </div>
+    <button type="button" class="share-everywhere-btn" onclick="selectChannelAndTriggerNative('everywhere')">
+      <span>📤 Partager partout</span>
+    </button>
+  </section>
+
+  <!-- 1. Choix du canal de partage -->
+  <section aria-labelledby="channels-heading">
+    <h2 id="channels-heading" class="share-section-title">1. Choisissez un canal de partage</h2>
+    <div class="share-channels-grid" role="listbox" aria-label="Canaux de partage disponibles">
+      <button type="button" class="share-channel-btn active" data-channel-group="whatsapp" onclick="selectChannelGroup('whatsapp')" aria-selected="true">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">💬</span>
+          <span class="share-channel-format-tag">Discussion & Statut</span>
+        </div>
+        <div>
+          <div class="share-channel-name">WhatsApp</div>
+          <div class="share-channel-sub">Message ou Story 9:16</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="instagram" onclick="selectChannelGroup('instagram')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">📸</span>
+          <span class="share-channel-format-tag">Story 9:16</span>
+        </div>
+        <div>
+          <div class="share-channel-name">Instagram</div>
+          <div class="share-channel-sub">Visuel Story vertical</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="facebook" onclick="selectChannelGroup('facebook')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">📘</span>
+          <span class="share-channel-format-tag">Post & Story</span>
+        </div>
+        <div>
+          <div class="share-channel-name">Facebook</div>
+          <div class="share-channel-sub">Publication ou Story</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="x" onclick="selectChannelGroup('x')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">𝕏</span>
+          <span class="share-channel-format-tag">Post concis</span>
+        </div>
+        <div>
+          <div class="share-channel-name">X</div>
+          <div class="share-channel-sub">Texte court + visuel</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="sms" onclick="selectChannelGroup('sms')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">✉️</span>
+          <span class="share-channel-format-tag">Texte direct</span>
+        </div>
+        <div>
+          <div class="share-channel-name">SMS / Messages</div>
+          <div class="share-channel-sub">Message ultra-simple</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="email" onclick="selectChannelGroup('email')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">📧</span>
+          <span class="share-channel-format-tag">Objet + Corps</span>
+        </div>
+        <div>
+          <div class="share-channel-name">E-mail</div>
+          <div class="share-channel-sub">Présentation complète</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="other_apps" onclick="selectChannelGroup('other_apps')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">📱</span>
+          <span class="share-channel-format-tag">Multi-apps</span>
+        </div>
+        <div>
+          <div class="share-channel-name">Autres applications</div>
+          <div class="share-channel-sub">Telegram, Signal…</div>
+        </div>
+      </button>
+
+      <button type="button" class="share-channel-btn" data-channel-group="everywhere" onclick="selectChannelGroup('everywhere')" aria-selected="false">
+        <div class="share-channel-top">
+          <span class="share-channel-icon" aria-hidden="true">📤</span>
+          <span class="share-channel-format-tag">Système natif</span>
+        </div>
+        <div>
+          <div class="share-channel-name">Partager partout</div>
+          <div class="share-channel-sub">Visuel + texte + lien</div>
+        </div>
+      </button>
+    </div>
+
+    <!-- Sous-mode pour WhatsApp (Discussion vs Statut) ou Facebook (Publication vs Story) -->
+    <div id="subChannelContainer" style="margin-top: 10px;">
+      <div id="whatsappSubModes" class="share-segmented" aria-label="Mode de partage WhatsApp">
+        <button type="button" class="share-seg-btn active" data-subchannel="whatsapp_chat" onclick="setSpecificChannel('whatsapp_chat')">
+          💬 Discussion / Groupe WhatsApp
+        </button>
+        <button type="button" class="share-seg-btn" data-subchannel="whatsapp_status" onclick="setSpecificChannel('whatsapp_status')">
+          📱 WhatsApp Status (Visuel Story 9:16)
+        </button>
+      </div>
+
+      <div id="facebookSubModes" class="share-segmented hidden" aria-label="Mode de partage Facebook">
+        <button type="button" class="share-seg-btn active" data-subchannel="facebook_post" onclick="setSpecificChannel('facebook_post')">
+          📘 Facebook Publication (Format Carré)
+        </button>
+        <button type="button" class="share-seg-btn" data-subchannel="facebook_story" onclick="setSpecificChannel('facebook_story')">
+          📱 Facebook Story (Visuel vertical 9:16)
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Espace de travail : Personnalisation (Gauche) + Aperçu en direct (Droite) -->
+  <div class="share-workspace">
+    <!-- 2. Personnalisation & Contexte -->
+    <section class="card" style="margin: 0;" aria-labelledby="customize-heading">
+      <h2 id="customize-heading" class="share-section-title">2. Contexte et personnalisation</h2>
+
+      <!-- Choix du contexte : Général, Station ou Quartier -->
+      <div style="margin-bottom: 14px;">
+        <label style="font-size: var(--text-xs); font-weight: 700; color: var(--ink-secondary); display: block; margin-bottom: 6px;">
+          Que souhaitez-vous partager ?
+        </label>
+        <div class="share-segmented" role="group" aria-label="Type de contenu à partager">
+          <button type="button" class="share-seg-btn <%= initialContextType === 'general' ? 'active' : '' %>" data-context-btn="general" onclick="setShareContextType('general')">
+            🌍 Igitoro Live (Général)
+          </button>
+          <button type="button" class="share-seg-btn <%= initialContextType === 'station' ? 'active' : '' %>" data-context-btn="station" onclick="setShareContextType('station')">
+            ⛽ Une station
+          </button>
+          <button type="button" class="share-seg-btn <%= initialContextType === 'zone' ? 'active' : '' %>" data-context-btn="zone" onclick="setShareContextType('zone')">
+            📍 Un quartier
+          </button>
+        </div>
+      </div>
+
+      <!-- Sélecteur de station -->
+      <div id="stationContextPicker" class="<%= initialContextType === 'station' ? '' : 'hidden' %>" style="margin-bottom: 14px;">
+        <label for="shareStationSelect" style="font-size: var(--text-xs); font-weight: 700;">
+          Station concernée (informations publiques uniquement)
+        </label>
+        <select id="shareStationSelect" onchange="onContextEntityChange()" style="margin-top: 4px;">
+          <% for (const s of stations) { %>
+            <option value="<%= s.id %>"
+                    data-name="<%= s.name %>"
+                    data-zone="<%= s.zone || s.commune || 'Bujumbura' %>"
+                    <%= (selectedStation && selectedStation.id === s.id) ? 'selected' : '' %>>
+              <%= s.name %> — <%= s.zone %> (<%= s.commune %>)
+            </option>
+          <% } %>
+        </select>
+        <small class="muted" style="display: block; margin-top: 4px; font-size: 0.76rem;">
+          Règle d'intégrité : le partage invite à consulter ou renseigner cette station, sans jamais promettre de stock garanti.
+        </small>
+      </div>
+
+      <!-- Sélecteur de quartier / zone -->
+      <div id="zoneContextPicker" class="<%= initialContextType === 'zone' ? '' : 'hidden' %>" style="margin-bottom: 14px;">
+        <label for="shareZoneSelect" style="font-size: var(--text-xs); font-weight: 700;">
+          Quartier / Zone de Bujumbura
+        </label>
+        <select id="shareZoneSelect" onchange="onContextEntityChange()" style="margin-top: 4px;">
+          <% for (const z of zones) { %>
+            <option value="<%= z %>" <%= (selectedZone === z) ? 'selected' : '' %>><%= z %></option>
+          <% } %>
+        </select>
+      </div>
+
+      <!-- Choix du style de message -->
+      <div style="margin-bottom: 14px;">
+        <label style="font-size: var(--text-xs); font-weight: 700; color: var(--ink-secondary); display: block; margin-bottom: 6px;">
+          Style du message
+        </label>
+        <div class="share-segmented" role="group" aria-label="Style du message">
+          <button type="button" class="share-seg-btn active" data-style-btn="standard" onclick="setShareStyle('standard')">
+            Standard
+          </button>
+          <button type="button" class="share-seg-btn" data-style-btn="community" onclick="setShareStyle('community')">
+            Communauté
+          </button>
+          <button type="button" class="share-seg-btn" data-style-btn="info" onclick="setShareStyle('info')">
+            Information
+          </button>
+        </div>
+      </div>
+
+      <!-- Objet de l'e-mail (visible uniquement pour le canal E-mail) -->
+      <div id="emailSubjectGroup" class="hidden" style="margin-bottom: 12px;">
+        <label for="shareEmailSubjectInput" style="font-size: var(--text-xs); font-weight: 700;">
+          Objet de l'e-mail
+        </label>
+        <input type="text" id="shareEmailSubjectInput" oninput="onCustomSubjectEdit()" style="margin-top: 4px;">
+      </div>
+
+      <!-- Zone de texte modifiable -->
+      <div style="margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+          <label for="shareMessageInput" style="font-size: var(--text-xs); font-weight: 700; margin: 0;">
+            Message prêt à partager (modifiable)
+          </label>
+          <button type="button" onclick="resetCustomMessage()" style="background: transparent; border: none; color: var(--pine); font-size: 0.76rem; font-weight: 700; cursor: pointer;">
+            Réinitialiser le texte
+          </button>
+        </div>
+        <textarea id="shareMessageInput" rows="7" oninput="onCustomMessageEdit()" style="width: 100%; font-size: var(--text-sm); line-height: 1.45;"></textarea>
+      </div>
+
+      <!-- Signature facultative -->
+      <div style="margin-bottom: 12px;">
+        <label for="shareSignatureInput" style="font-size: var(--text-xs); font-weight: 700;">
+          Signature (facultatif)
+        </label>
+        <input type="text" id="shareSignatureInput" maxlength="60" placeholder="Ex : Partagé par un citoyen à Bujumbura" oninput="onSignatureChange()" style="margin-top: 4px;">
+      </div>
+
+      <!-- Format du visuel -->
+      <div>
+        <label style="font-size: var(--text-xs); font-weight: 700; color: var(--ink-secondary); display: block; margin-bottom: 6px;">
+          Format du visuel généré
+        </label>
+        <div class="share-segmented" role="group" aria-label="Format du visuel">
+          <button type="button" class="share-seg-btn" data-format-btn="story" onclick="setVisualFormatOverride('story')">
+            📱 Story verticale (9:16 · 1080×1920)
+          </button>
+          <button type="button" class="share-seg-btn active" data-format-btn="square" onclick="setVisualFormatOverride('square')">
+            🖼️ Publication carrée (1:1 · 1080×1080)
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Aperçu avant partage -->
+    <section class="share-preview-card" aria-labelledby="preview-heading">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+        <h2 id="preview-heading" class="share-section-title" style="margin: 0;">Aperçu</h2>
+        <div style="font-size: var(--text-xs); color: var(--muted);">
+          <strong id="previewPlatformLabel" style="color: var(--pine-dark);">WhatsApp</strong>
+          <span aria-hidden="true">·</span>
+          <span id="previewTypeLabel">Message de discussion / groupe</span>
+        </div>
+      </div>
+
+      <!-- Explication honnête du fonctionnement sur la plateforme choisie -->
+      <div class="share-honest-notice" id="previewHonestNotice" role="status">
+        Ouvre WhatsApp avec le message prêt à envoyer à un proche ou dans un groupe.
+      </div>
+
+      <!-- Aperçu du visuel Canvas généré avec QR Code -->
+      <div class="share-canvas-container">
+        <canvas id="sharePreviewCanvas" width="1080" height="1080" aria-label="Aperçu du visuel social Igitoro Live avec QR code"></canvas>
+      </div>
+
+      <!-- Lien cible vérifié -->
+      <div style="background: var(--surface-subtle); border: 1px solid var(--line); border-radius: var(--radius-xs); padding: 8px 12px; font-size: var(--text-xs); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;">
+          <span class="muted">Lien inclus :</span>
+          <strong id="previewUrlDisplay" style="color: var(--pine-dark);"><%= publicOrigin %>/</strong>
+        </div>
+        <button type="button" onclick="copyShareUrl()" style="background: transparent; border: none; color: var(--pine); font-weight: 700; font-size: var(--text-xs); cursor: pointer;">
+          🔗 Copier le lien
+        </button>
+      </div>
+
+      <!-- Barre de boutons principale de l'aperçu : Modifier / Partager / Retour -->
+      <div class="share-actions-bar">
+        <button type="button" class="btn btn-primary" id="mainShareActionBtn" onclick="handlePrimaryShareClick()" style="flex: 2 1 180px;">
+          🚀 Partager sur <span id="mainShareBtnChannel">WhatsApp</span>
+        </button>
+        <button type="button" class="btn" onclick="focusMessageEditor()" style="background: var(--surface-subtle); border: 1px solid var(--line); flex: 1 1 100px;">
+          ✏️ Modifier
+        </button>
+        <a href="<%= backUrl || '/' %>" class="btn" style="background: var(--surface-subtle); border: 1px solid var(--line); flex: 1 1 90px; text-decoration: none; color: var(--ink);">
+          ↩️ Retour
+        </a>
+      </div>
+
+      <!-- Outils directs et de secours toujours accessibles (Télécharger l'image, Copier le message, Partage natif avec fichier) -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);">
+        <button type="button" class="btn" onclick="downloadGeneratedVisual()" style="background: var(--pine-50); color: var(--pine-dark); border: 1px solid var(--pine-border); font-size: var(--text-xs); flex: 1 1 140px;">
+          📥 Télécharger l'image
+        </button>
+        <button type="button" class="btn" onclick="copyShareMessage()" style="background: var(--surface-subtle); border: 1px solid var(--line); font-size: var(--text-xs); flex: 1 1 140px;">
+          📋 Copier le message
+        </button>
+        <button type="button" class="btn" id="nativeFileShareSecondaryBtn" onclick="triggerNativeShareWithVisual()" style="background: var(--amber-50); color: var(--amber-600); border: 1px solid rgba(217, 150, 10, 0.35); font-size: var(--text-xs); flex: 1 1 160px;">
+          📤 Partager visuel + texte (Natif)
+        </button>
+      </div>
+
+      <!-- Bannière de retour d'état humain -->
+      <div id="shareFeedbackBanner" class="share-status-banner hidden" role="alert" aria-live="polite"></div>
+    </section>
+  </div>
+</div>
+
+<script src="/static/js/share.js"></script>
+<script>
+  (function() {
+    const rootEl = document.getElementById('shareAppRoot');
+    const publicOrigin = rootEl?.dataset.publicOrigin || window.location.origin;
+
+    const state = {
+      channel: 'whatsapp_chat',
+      contextType: rootEl?.dataset.initialContext || 'general',
+      style: 'standard',
+      signature: '',
+      visualFormatOverride: null,
+      customMessageEdited: false,
+      customSubjectEdited: false,
+      currentPackage: null
+    };
+
+    function sendShareMetric(eventName, channelName) {
+      fetch('/api/share/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: eventName, channel: channelName || state.channel })
+      }).catch(() => {});
+    }
+
+    function getSelectedStationData() {
+      const sel = document.getElementById('shareStationSelect');
+      if (!sel || !sel.selectedOptions || !sel.selectedOptions[0]) return null;
+      const opt = sel.selectedOptions[0];
+      return {
+        id: parseInt(opt.value, 10),
+        name: opt.dataset.name || opt.textContent.trim(),
+        zone: opt.dataset.zone || 'Bujumbura'
+      };
+    }
+
+    function getSelectedZoneData() {
+      const sel = document.getElementById('shareZoneSelect');
+      return sel ? sel.value : '';
+    }
+
+    function showFeedback(msg, kind = 'success') {
+      const banner = document.getElementById('shareFeedbackBanner');
+      if (!banner) return;
+      banner.textContent = msg;
+      banner.className = `share-status-banner ${kind}`;
+      banner.classList.remove('hidden');
+    }
+
+    function updatePreview() {
+      const pkg = window.IgitoroShare.generateSharePackage({
+        channel: state.channel,
+        contextType: state.contextType,
+        station: getSelectedStationData(),
+        zone: getSelectedZoneData(),
+        style: state.style,
+        signature: state.signature,
+        visualFormat: state.visualFormatOverride,
+        publicOrigin
+      });
+
+      const msgInput = document.getElementById('shareMessageInput');
+      const subjInput = document.getElementById('shareEmailSubjectInput');
+
+      if (!state.customMessageEdited && msgInput) {
+        msgInput.value = pkg.text;
+      } else if (msgInput) {
+        pkg.text = msgInput.value;
+      }
+
+      if (!state.customSubjectEdited && subjInput) {
+        subjInput.value = pkg.subject;
+      } else if (subjInput) {
+        pkg.subject = subjInput.value;
+      }
+
+      state.currentPackage = pkg;
+
+      // Mise à jour des étiquettes d'aperçu
+      document.getElementById('previewPlatformLabel').textContent = pkg.platformName;
+      document.getElementById('previewTypeLabel').textContent = pkg.shareTypeLabel;
+      document.getElementById('previewHonestNotice').textContent = pkg.honestNote;
+      document.getElementById('previewUrlDisplay').textContent = pkg.url;
+      document.getElementById('mainShareBtnChannel').textContent = pkg.platformName;
+
+      // Afficher ou masquer le champ Objet d'e-mail
+      const emailGroup = document.getElementById('emailSubjectGroup');
+      if (emailGroup) {
+        emailGroup.classList.toggle('hidden', state.channel !== 'email');
+      }
+
+      // Synchroniser les boutons de format visuel (Story 9:16 vs Carré 1:1)
+      document.querySelectorAll('[data-format-btn]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.formatBtn === pkg.visualFormat);
+      });
+
+      // Rendu du visuel sur le Canvas
+      const canvas = document.getElementById('sharePreviewCanvas');
+      window.IgitoroShare.renderShareVisualToCanvas(canvas, pkg);
+    }
+
+    // Exposition des gestionnaires d'interface
+    window.selectChannelGroup = function(group) {
+      document.querySelectorAll('.share-channel-btn').forEach(btn => {
+        const isMatch = btn.dataset.channelGroup === group;
+        btn.classList.toggle('active', isMatch);
+        btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+      });
+
+      const waSub = document.getElementById('whatsappSubModes');
+      const fbSub = document.getElementById('facebookSubModes');
+      if (waSub) waSub.classList.toggle('hidden', group !== 'whatsapp');
+      if (fbSub) fbSub.classList.toggle('hidden', group !== 'facebook');
+
+      state.visualFormatOverride = null;
+      state.customMessageEdited = false;
+      state.customSubjectEdited = false;
+
+      if (group === 'whatsapp') {
+        state.channel = 'whatsapp_chat';
+        document.querySelectorAll('#whatsappSubModes .share-seg-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.subchannel === 'whatsapp_chat');
+        });
+      } else if (group === 'instagram') {
+        state.channel = 'instagram_story';
+      } else if (group === 'facebook') {
+        state.channel = 'facebook_post';
+        document.querySelectorAll('#facebookSubModes .share-seg-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.subchannel === 'facebook_post');
+        });
+      } else {
+        state.channel = group;
+      }
+
+      sendShareMetric('share_channel_selected', state.channel);
+      updatePreview();
+    };
+
+    window.setSpecificChannel = function(subChannel) {
+      state.channel = subChannel;
+      state.visualFormatOverride = null;
+      state.customMessageEdited = false;
+
+      document.querySelectorAll('[data-subchannel]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.subchannel === subChannel);
+      });
+
+      sendShareMetric('share_channel_selected', state.channel);
+      updatePreview();
+    };
+
+    window.setShareContextType = function(ctxType) {
+      state.contextType = ctxType;
+      state.customMessageEdited = false;
+      state.customSubjectEdited = false;
+
+      document.querySelectorAll('[data-context-btn]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.contextBtn === ctxType);
+      });
+      document.getElementById('stationContextPicker')?.classList.toggle('hidden', ctxType !== 'station');
+      document.getElementById('zoneContextPicker')?.classList.toggle('hidden', ctxType !== 'zone');
+
+      updatePreview();
+    };
+
+    window.onContextEntityChange = function() {
+      state.customMessageEdited = false;
+      state.customSubjectEdited = false;
+      updatePreview();
+    };
+
+    window.setShareStyle = function(styleName) {
+      state.style = styleName;
+      state.customMessageEdited = false;
+      document.querySelectorAll('[data-style-btn]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.styleBtn === styleName);
+      });
+      updatePreview();
+    };
+
+    window.setVisualFormatOverride = function(fmt) {
+      state.visualFormatOverride = fmt;
+      updatePreview();
+    };
+
+    window.onCustomMessageEdit = function() {
+      state.customMessageEdited = true;
+      if (state.currentPackage) {
+        state.currentPackage.text = document.getElementById('shareMessageInput').value;
+      }
+    };
+
+    window.onCustomSubjectEdit = function() {
+      state.customSubjectEdited = true;
+      if (state.currentPackage) {
+        state.currentPackage.subject = document.getElementById('shareEmailSubjectInput').value;
+      }
+    };
+
+    window.onSignatureChange = function() {
+      state.signature = document.getElementById('shareSignatureInput').value;
+      state.customMessageEdited = false;
+      updatePreview();
+    };
+
+    window.resetCustomMessage = function() {
+      state.customMessageEdited = false;
+      state.customSubjectEdited = false;
+      updatePreview();
+      showFeedback('Message réinitialisé avec le modèle adapté au canal.', 'info');
+    };
+
+    window.focusMessageEditor = function() {
+      const area = document.getElementById('shareMessageInput');
+      if (area) {
+        area.focus();
+        area.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    };
+
+    window.copyShareMessage = async function() {
+      const text = document.getElementById('shareMessageInput')?.value || state.currentPackage?.text || '';
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const area = document.getElementById('shareMessageInput');
+          area.select();
+          document.execCommand('copy');
+        }
+        sendShareMetric('share_fallback_used', state.channel);
+        showFeedback('Message copié dans le presse-papiers ✅', 'success');
+      } catch (_) {
+        showFeedback('Sélectionnez le texte dans la boîte ci-dessus pour le copier.', 'info');
+      }
+    };
+
+    window.copyShareUrl = async function() {
+      const url = state.currentPackage?.url || publicOrigin;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+        }
+        sendShareMetric('share_fallback_used', state.channel);
+        showFeedback('Lien copié dans le presse-papiers ✅', 'success');
+      } catch (_) {
+        showFeedback(`Lien à copier : ${url}`, 'info');
+      }
+    };
+
+    window.downloadGeneratedVisual = function() {
+      const canvas = document.getElementById('sharePreviewCanvas');
+      if (!canvas || !state.currentPackage) return;
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = state.currentPackage.fileName || 'igitoro-live-partage.png';
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        sendShareMetric('share_generated', state.channel);
+        showFeedback(`Visuel enregistré (${state.currentPackage.fileName}) ✅`, 'success');
+      } catch (_) {
+        showFeedback('Impossible de télécharger automatiquement le visuel sur ce navigateur.', 'info');
+      }
+    };
+
+    window.triggerNativeShareWithVisual = async function() {
+      const canvas = document.getElementById('sharePreviewCanvas');
+      if (!state.currentPackage) updatePreview();
+      sendShareMetric('share_native_started', state.channel);
+      const res = await window.IgitoroShare.executeShareAction(state.currentPackage, canvas, { forceNative: true });
+      if (res.mode === 'manual_fallback') {
+        sendShareMetric('share_fallback_used', state.channel);
+        window.downloadGeneratedVisual();
+        await window.copyShareMessage();
+        showFeedback('Visuel téléchargé ✅ et message copié ✅. Ouvrez votre application pour les publier.', 'info');
+      } else {
+        showFeedback(res.userMessage, res.cancelled ? 'info' : 'success');
+      }
+    };
+
+    window.selectChannelAndTriggerNative = async function(ch) {
+      window.selectChannelGroup(ch);
+      await window.triggerNativeShareWithVisual();
+    };
+
+    window.handlePrimaryShareClick = async function() {
+      if (!state.currentPackage) updatePreview();
+      const pkg = state.currentPackage;
+      const canvas = document.getElementById('sharePreviewCanvas');
+
+      // Pour les Stories (Instagram Story, WhatsApp Status, Facebook Story) ou Partager partout
+      if (
+        pkg.channel === 'instagram_story' ||
+        pkg.channel === 'whatsapp_status' ||
+        pkg.channel === 'facebook_story' ||
+        pkg.channel === 'everywhere' ||
+        pkg.channel === 'other_apps'
+      ) {
+        const caps = window.IgitoroShare.detectShareCapabilities();
+        if (caps.hasWebShare) {
+          sendShareMetric('share_native_started', pkg.channel);
+          const result = await window.IgitoroShare.executeShareAction(pkg, canvas, { forceNative: true });
+          if (result.mode !== 'manual_fallback') {
+            showFeedback(result.userMessage, result.cancelled ? 'info' : 'success');
+            return;
+          }
+        }
+        // Fallback honnête : télécharger le visuel + copier la légende
+        sendShareMetric('share_fallback_used', pkg.channel);
+        window.downloadGeneratedVisual();
+        await window.copyShareMessage();
+        showFeedback(`Visuel prêt et enregistré ✅ · Légende copiée ✅. Ouvrez maintenant ${pkg.platformName} pour terminer votre publication.`, 'success');
+        return;
+      }
+
+      // Pour Facebook Publication ou X : copier aussi le texte et proposer le visuel
+      if (pkg.channel === 'facebook_post') {
+        await window.copyShareMessage();
+      }
+
+      const result = await window.IgitoroShare.executeShareAction(pkg, canvas, { forceNative: false });
+      if (result.intentUrl) {
+        sendShareMetric('share_generated', pkg.channel);
+        if (result.intentUrl.startsWith('mailto:') || result.intentUrl.startsWith('sms:')) {
+          window.location.href = result.intentUrl;
+        } else {
+          const extLink = document.createElement('a');
+          extLink.href = result.intentUrl;
+          extLink.target = '_blank';
+          extLink.rel = 'noopener noreferrer';
+          document.body.appendChild(extLink);
+          extLink.click();
+          document.body.removeChild(extLink);
+        }
+        showFeedback(result.userMessage, 'success');
+      } else {
+        showFeedback(result.userMessage, 'info');
+      }
+    };
+
+    // Initialisation au chargement
+    const caps = window.IgitoroShare.detectShareCapabilities();
+    const capLabel = document.getElementById('nativeCapabilityLabel');
+    if (capLabel) {
+      if (caps.hasWebShare && caps.canShareFiles) {
+        capLabel.textContent = '✓ Votre appareil permet le partage direct du visuel et du message vers vos applications.';
+      } else if (caps.hasWebShare) {
+        capLabel.textContent = '✓ Partage natif du message et du lien actif (téléchargement direct disponible pour le visuel).';
+      } else {
+        capLabel.textContent = 'Mode assisté actif : téléchargement du visuel en 1 clic, copie du message et ouverture directe des canaux.';
+      }
+    }
+
+    sendShareMetric('share_opened', 'initial');
+    updatePreview();
+  })();
+</script>
+
+<%- include('partials/footer') %>

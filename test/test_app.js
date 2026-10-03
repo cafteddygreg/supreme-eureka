@@ -497,6 +497,207 @@ async function runTests() {
     assert(data.ok);
   });
 
+  // ================= 8. Système de Partage Complet =================
+  await import('../static/js/share.js');
+  const IgitoroShare = globalThis.IgitoroShare;
+
+  await test('GET /partager et GET /share affichent l’interface complète et les 8 canaux', async () => {
+    for (const route of ['/partager', '/share']) {
+      const res = await fetch(`${BASE_URL}${route}`);
+      assert.strictEqual(res.status, 200);
+      const html = await res.text();
+      assert(html.includes('Partager Igitoro Live'));
+      assert(html.includes('Tu cherches. Tu observes. Tu aides.'));
+      assert(html.includes('WhatsApp'));
+      assert(html.includes('Instagram'));
+      assert(html.includes('Facebook'));
+      assert(html.includes('SMS / Messages'));
+      assert(html.includes('E-mail'));
+      assert(html.includes('Autres applications'));
+      assert(html.includes('Partager partout'));
+      assert(html.includes('og:image'));
+      assert(html.includes('twitter:card'));
+    }
+  });
+
+  await test('Bouton « 🤝 Partager Igitoro Live » présent sur Accueil, Station, Alertes et Profil', async () => {
+    for (const p of ['/', '/stations/1', '/notifications', '/profil']) {
+      const res = await fetch(`${BASE_URL}${p}`);
+      assert.strictEqual(res.status, 200);
+      const html = await res.text();
+      assert(html.includes('Partager Igitoro Live'), `Bouton absent sur ${p}`);
+    }
+  });
+
+  await test('GET /api/share/context valide les contextes (général, station, quartier) et n’expose aucune donnée privée', async () => {
+    const genRes = await fetch(`${BASE_URL}/api/share/context`);
+    assert.strictEqual(genRes.status, 200);
+    const genData = await genRes.json();
+    assert.strictEqual(genData.context_type, 'general');
+    assert(!genData.public_origin.includes('127.0.0.1'));
+    assert(!genData.public_origin.includes('localhost'));
+
+    const stRes = await fetch(`${BASE_URL}/api/share/context?station_id=1`);
+    assert.strictEqual(stRes.status, 200);
+    const stData = await stRes.json();
+    assert.strictEqual(stData.context_type, 'station');
+    assert.strictEqual(stData.station.id, 1);
+    assert(stData.target_url.endsWith('/stations/1'));
+    assert(!JSON.stringify(stData).includes('email'));
+    assert(!JSON.stringify(stData).includes('google_sub'));
+
+    const zRes = await fetch(`${BASE_URL}/api/share/context?zone=Kinindo`);
+    assert.strictEqual(zRes.status, 200);
+    const zData = await zRes.json();
+    assert.strictEqual(zData.context_type, 'zone');
+    assert.strictEqual(zData.zone, 'Kinindo');
+  });
+
+  await test('Générateur de contenu : adapte les messages par canal, style et contexte sans garantir de stock', async () => {
+    const channels = [
+      'everywhere',
+      'whatsapp_chat',
+      'whatsapp_status',
+      'instagram_story',
+      'facebook_post',
+      'facebook_story',
+      'x',
+      'sms',
+      'email',
+      'other_apps'
+    ];
+    for (const ch of channels) {
+      const pkg = IgitoroShare.generateSharePackage({
+        channel: ch,
+        contextType: 'station',
+        station: { id: 1, name: 'Kimoil Fuel Stop', zone: 'Centre-Ville' },
+        style: 'community',
+        signature: 'Citoyen Bujumbura',
+        publicOrigin: 'https://igitorolive.up.railway.app'
+      });
+      assert(pkg.text.includes('Kimoil Fuel Stop'), `Nom station absent pour ${ch}`);
+      assert(pkg.text.includes('Citoyen Bujumbura'), `Signature absente pour ${ch}`);
+      assert(pkg.url === 'https://igitorolive.up.railway.app/stations/1');
+      assert(!pkg.text.toLowerCase().includes('stock garanti'));
+      if (ch === 'instagram_story' || ch === 'whatsapp_status' || ch === 'facebook_story') {
+        assert.strictEqual(pkg.visualFormat, 'story');
+      } else {
+        assert.strictEqual(pkg.visualFormat, 'square');
+      }
+    }
+  });
+
+  await test('Générateur QR Code et Visuels Canvas (Story 1080x1920 et Carré 1080x1080)', async () => {
+    const matrix = IgitoroShare.generateQrMatrix('https://igitorolive.up.railway.app/stations/1');
+    assert(Array.isArray(matrix) && matrix.length >= 21);
+    assert.strictEqual(matrix[0][0], true);
+    assert.strictEqual(matrix[0][6], true);
+
+    const drawOps = [];
+    const mockCtx = {
+      createLinearGradient: () => ({ addColorStop: () => {} }),
+      createRadialGradient: () => ({ addColorStop: () => {} }),
+      fillRect: () => { drawOps.push('fillRect'); },
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      quadraticCurveTo: () => {},
+      closePath: () => {},
+      fill: () => { drawOps.push('fill'); },
+      stroke: () => { drawOps.push('stroke'); },
+      save: () => {},
+      restore: () => {},
+      translate: () => {},
+      scale: () => {},
+      fillText: (txt) => { drawOps.push(`text:${txt}`); }
+    };
+
+    const storyCanvas = { width: 0, height: 0, getContext: () => mockCtx };
+    const storyPkg = IgitoroShare.generateSharePackage({ channel: 'instagram_story' });
+    IgitoroShare.renderShareVisualToCanvas(storyCanvas, storyPkg);
+    assert.strictEqual(storyCanvas.width, 1080);
+    assert.strictEqual(storyCanvas.height, 1920);
+    assert(drawOps.some(op => op.includes('Tu cherches. Tu observes. Tu aides.')));
+    assert(drawOps.some(op => op.includes('Built by Tedd')));
+
+    const sqCanvas = { width: 0, height: 0, getContext: () => mockCtx };
+    const sqPkg = IgitoroShare.generateSharePackage({ channel: 'facebook_post' });
+    IgitoroShare.renderShareVisualToCanvas(sqCanvas, sqPkg);
+    assert.strictEqual(sqCanvas.width, 1080);
+    assert.strictEqual(sqCanvas.height, 1080);
+  });
+
+  await test('Web Share API : partage fichier, repli texte+URL, annulation et fallback sans Web Share', async () => {
+    const pkg = IgitoroShare.generateSharePackage({ channel: 'everywhere' });
+    const fakeCanvas = {
+      toBlob: (cb) => cb(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+    };
+
+    // Cas 1 : Web Share + canShare(files) supporté
+    let sharedPayload = null;
+    const navWithFiles = {
+      canShare: () => true,
+      share: async (data) => { sharedPayload = data; }
+    };
+    const res1 = await IgitoroShare.executeShareAction(pkg, fakeCanvas, { navigator: navWithFiles, forceNative: true });
+    assert.strictEqual(res1.mode, 'native_file');
+    assert(sharedPayload && Array.isArray(sharedPayload.files));
+
+    // Cas 2 : Web Share supporté mais fichiers refusés par canShare
+    const navTextOnly = {
+      canShare: () => false,
+      share: async (data) => { sharedPayload = data; }
+    };
+    const res2 = await IgitoroShare.executeShareAction(pkg, fakeCanvas, { navigator: navTextOnly, forceNative: true });
+    assert.strictEqual(res2.mode, 'native_text');
+    assert.strictEqual(sharedPayload.url, pkg.url);
+
+    // Cas 3 : Annulation par l’utilisateur (AbortError)
+    const navCancelled = {
+      canShare: () => false,
+      share: async () => {
+        const err = new Error('User cancelled');
+        err.name = 'AbortError';
+        throw err;
+      }
+    };
+    const res3 = await IgitoroShare.executeShareAction(pkg, fakeCanvas, { navigator: navCancelled, forceNative: true });
+    assert.strictEqual(res3.cancelled, true);
+    assert.strictEqual(res3.mode, 'cancelled');
+
+    // Cas 4 : Navigateur sans Web Share -> fallback honnête ou intent officiel
+    const igPkg = IgitoroShare.generateSharePackage({ channel: 'instagram_story' });
+    const res4 = await IgitoroShare.executeShareAction(igPkg, fakeCanvas, { navigator: {} });
+    assert.strictEqual(res4.mode, 'manual_fallback');
+
+    const waPkg = IgitoroShare.generateSharePackage({ channel: 'whatsapp_chat' });
+    const res5 = await IgitoroShare.executeShareAction(waPkg, fakeCanvas, { navigator: {} });
+    assert.strictEqual(res5.mode, 'channel_intent');
+    assert(res5.intentUrl.startsWith('https://wa.me/?text='));
+  });
+
+  await test('Sécurité du partage : rejette les URLs dangereuses, domaines externes et balises XSS', async () => {
+    const safe1 = IgitoroShare.sanitizeShareUrl('javascript:alert(1)', 'https://igitorolive.up.railway.app');
+    assert.strictEqual(safe1, 'https://igitorolive.up.railway.app/');
+
+    const safe2 = IgitoroShare.sanitizeShareUrl('https://evil-phishing.example.com/fake', 'https://igitorolive.up.railway.app');
+    assert.strictEqual(safe2, 'https://igitorolive.up.railway.app/');
+
+    const safeOrigin = IgitoroShare.resolvePublicShareOrigin('http://127.0.0.1:3000', 'http://localhost:3000');
+    assert.strictEqual(safeOrigin, 'https://igitorolive.up.railway.app');
+
+    const cleanTxt = IgitoroShare.sanitizeText('<script>alert(1)</script>Bonjour');
+    assert(!cleanTxt.includes('<script>'));
+    assert(cleanTxt.includes('Bonjour'));
+
+    const evRes = await fetch(`${BASE_URL}/api/share/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'share_opened', channel: 'whatsapp_chat' })
+    });
+    assert.strictEqual(evRes.status, 200);
+  });
+
   console.log(`\n========================================`);
   console.log(`Résultats : ${passed} passés, ${failed} échoués`);
   console.log(`========================================`);

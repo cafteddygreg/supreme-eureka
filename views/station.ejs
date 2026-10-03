@@ -1,4 +1,9 @@
-<%- include('partials/header', { title: station ? station.name + ' - Igitoro Live' : 'Station introuvable' }) %>
+<%- include('partials/header', {
+  title: station ? station.name + ' (' + station.zone + ') — Igitoro Live' : 'Station introuvable — Igitoro Live',
+  ogTitle: station ? station.name + ' (' + station.zone + ') — Observations sur Igitoro Live' : 'Igitoro Live — Stations Bujumbura',
+  ogDescription: station ? 'Tu cherches. Tu observes. Tu aides. Consultez ou partagez les dernières observations communautaires pour la station ' + station.name + ' (' + station.zone + ') à Bujumbura.' : undefined,
+  canonicalUrl: station && typeof publicOrigin !== 'undefined' ? (publicOrigin + '/stations/' + station.id) : undefined
+}) %>
 
 <% if (station) { %>
   <div style="margin-bottom: 14px;">
@@ -33,6 +38,9 @@
     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px;">
       <a class="button btn-primary" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(station.location_text + ' ' + station.name + ' Bujumbura') %>">
         🗺️ Voir l'itinéraire
+      </a>
+      <a class="button" href="/partager?station_id=<%= station.id %>" style="background: var(--pine-50); color: var(--pine-dark); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.88rem;">
+        🤝 Partager Igitoro Live
       </a>
       <% if (!station.is_verified) { %>
         <button type="button" class="btn" onclick="openClaimModal()" style="background: var(--surface); border: 1px solid var(--line); font-size: 0.84rem; color: var(--muted);">

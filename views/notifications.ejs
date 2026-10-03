@@ -1,8 +1,13 @@
 <%- include('partials/header', { title: 'Alertes par Quartier - Igitoro Live' }) %>
 
-<div style="margin-bottom: 20px;">
-  <h1 style="margin: 0 0 6px; font-size: 1.8rem; color: var(--pine-dark);">Alertes & Notifications</h1>
-  <p class="muted" style="margin: 0;">Suivez vos zones habituelles pour être informé dès que du carburant est disponible. Aucun suivi GPS.</p>
+<div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+  <div>
+    <h1 style="margin: 0 0 6px; font-size: 1.8rem; color: var(--pine-dark);">Alertes & Notifications</h1>
+    <p class="muted" style="margin: 0;">Suivez vos zones habituelles pour être informé dès que du carburant est disponible. Aucun suivi GPS.</p>
+  </div>
+  <a href="/partager" class="button" style="background: var(--pine-50); color: var(--pine-dark); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.85rem;">
+    🤝 Partager Igitoro Live
+  </a>
 </div>
 
 <!-- Synthèse des activités groupées par quartier -->
@@ -15,7 +20,12 @@
         <article class="card" style="border-left: 4px solid var(--pine);">
           <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px;">
             <strong style="color: var(--pine-dark); font-size: 1rem;"><%= g.zone %></strong>
-            <small class="muted"><%= g.freshness %></small>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <small class="muted"><%= g.freshness %></small>
+              <a href="/partager?zone=<%= encodeURIComponent(g.zone) %>" style="font-size: 0.78rem; font-weight: 700; color: var(--pine);">
+                🤝 Partager ce quartier
+              </a>
+            </div>
           </div>
           <p style="margin: 6px 0 4px; font-size: 0.9rem;">
             <%= g.summary %>

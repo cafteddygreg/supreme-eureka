@@ -1,8 +1,13 @@
 <%- include('partials/header', { title: 'Mon Profil - Igitoro Live' }) %>
 
-<div style="margin-bottom: 20px;">
-  <h1 style="margin: 0 0 6px; font-size: 1.8rem; color: var(--pine-dark);">Mon Profil</h1>
-  <p class="muted" style="margin: 0;">Gérez vos participations communautaires et vos préférences.</p>
+<div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+  <div>
+    <h1 style="margin: 0 0 6px; font-size: 1.8rem; color: var(--pine-dark);">Mon Profil</h1>
+    <p class="muted" style="margin: 0;">Gérez vos participations communautaires et vos préférences.</p>
+  </div>
+  <a href="/partager" class="button" style="background: var(--pine-50); color: var(--pine-dark); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.85rem;">
+    🤝 Partager Igitoro Live
+  </a>
 </div>
 
 <% if (user) { %>

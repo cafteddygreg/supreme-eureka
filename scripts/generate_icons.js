@@ -279,3 +279,81 @@ for (const d of dirs) {
   fs.writeFileSync(path.resolve(d, 'icon.svg'), svgContent, 'utf8');
 }
 console.log('Généré : icon.svg');
+
+/**
+ * Génère une bannière Open Graph 1200x630 pour les aperçus sociaux (WhatsApp, Facebook, X, LinkedIn)
+ */
+function renderOgBanner(width = 1200, height = 630) {
+  const rgba = Buffer.alloc(width * height * 4);
+  const pineDark = [16, 39, 27];
+  const pineLight = [35, 82, 58];
+  const goldAccent = [251, 211, 104];
+  const pumpRed = [230, 57, 70];
+  const creamWhite = [252, 250, 245];
+  const screenDark = [22, 42, 32];
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const nx = (x / width) * 2 - 1;
+      const ny = (y / height) * 2 - 1;
+
+      const gradT = Math.max(0, Math.min(1, (nx + ny + 2) / 4));
+      let color = [
+        Math.round(pineLight[0] * (1 - gradT) + pineDark[0] * gradT),
+        Math.round(pineLight[1] * (1 - gradT) + pineDark[1] * gradT),
+        Math.round(pineLight[2] * (1 - gradT) + pineDark[2] * gradT),
+        255
+      ];
+
+      // Bordure dorée panoramique
+      const bx = (x - width / 2) / (height / 2);
+      const by = (y - height / 2) / (height / 2);
+      const aspect = width / height;
+      const bDist = Math.abs(sdRoundedBox(bx, by, aspect - 0.08, 0.92, 0.08)) - 0.01;
+      color = mixColor(color, goldAccent, smoothCoverage(bDist, 2.0 / height) * 0.5);
+
+      // Pompe à essence centrée
+      const px = bx * 1.15;
+      const py = by * 1.15;
+      const pixelSize = 2.3 / height;
+
+      const dHose1 = sdSegment(px, py, 0.30, 0.02, 0.46, 0.02) - 0.042;
+      const dHose2 = sdSegment(px, py, 0.46, 0.02, 0.46, 0.34) - 0.042;
+      const dHose3 = sdSegment(px, py, 0.46, 0.34, 0.58, 0.34) - 0.042;
+      const dHose4 = sdSegment(px, py, 0.58, 0.34, 0.58, -0.18) - 0.042;
+      const dHose = Math.min(dHose1, dHose2, dHose3, dHose4);
+      color = mixColor(color, goldAccent, smoothCoverage(dHose, pixelSize));
+
+      const dBody = sdRoundedBox(px, py, 0.32, 0.48, 0.08);
+      const bodyCov = smoothCoverage(dBody, pixelSize);
+      if (bodyCov > 0) {
+        color = mixColor(color, py < 0.04 ? pumpRed : creamWhite, bodyCov);
+      }
+
+      const dDivider = sdRoundedBox(px, py - 0.04, 0.325, 0.028, 0.01);
+      color = mixColor(color, goldAccent, smoothCoverage(dDivider, pixelSize));
+
+      const dScreenFrame = sdRoundedBox(px, py + 0.22, 0.23, 0.14, 0.04);
+      color = mixColor(color, creamWhite, smoothCoverage(dScreenFrame, pixelSize));
+
+      const dScreen = sdRoundedBox(px, py + 0.22, 0.19, 0.105, 0.025);
+      color = mixColor(color, screenDark, smoothCoverage(dScreen, pixelSize));
+
+      const dBase = sdRoundedBox(px, py - 0.49, 0.39, 0.055, 0.025);
+      color = mixColor(color, goldAccent, smoothCoverage(dBase, pixelSize));
+
+      const idx = (y * width + x) * 4;
+      rgba[idx] = color[0];
+      rgba[idx + 1] = color[1];
+      rgba[idx + 2] = color[2];
+      rgba[idx + 3] = 255;
+    }
+  }
+  return encodePNG(width, height, rgba);
+}
+
+const ogBuf = renderOgBanner(1200, 630);
+for (const d of dirs) {
+  fs.writeFileSync(path.resolve(d, 'og-share.png'), ogBuf);
+}
+console.log('Généré : og-share.png (1200x630)');

@@ -1,8 +1,13 @@
 # PROJECT.md
-Objectif : aider les personnes à consulter rapidement des observations communautaires récentes sur les stations-service à Bujumbura et réduire les déplacements inutiles.
+Objectif : aider les personnes à consulter rapidement des observations communautaires récentes sur les stations-service à Bujumbura et réduire les déplacements inutiles, selon le principe **« Tu cherches. Tu observes. Tu aides. »**
 
-V1 : stations, recherche, signalements, confirmations/contradictions, photo caméra facultative, notifications par zone, modération et administration.
+Fonctionnalités clés :
+- Stations, recherche par nom/marque/quartier et filtrage par commune (Mukaza, Muha, Ntahangwa).
+- Signalements authentifiés via Google OpenID Connect (OAuth 2.0), confirmations/contradictions, photo caméra en direct facultative avec filigrane.
+- Notifications et synthèses par quartier.
+- Système de partage communautaire complet (`/partager` / `/share`) avec génération automatique de textes et de visuels sociaux (`1080×1920` Story 9:16 et `1080×1080` Carré 1:1) incluant un QR Code public.
+- Modération, revendication de stations et administration.
 
-Hors périmètre : carte, GPS, tracking, offline, PWA agressive, SMS, Apple Sign-In, score de réputation.
+Hors périmètre : carte GPS intrusive, tracking individuel, gamification/points/classements toxiques, envoi automatique de SMS sans validation.
 
-Règle : un signalement est une observation à un moment donné, pas une garantie de stock.
+Règle d'or : un signalement est une observation communautaire à un moment donné, jamais une garantie de stock.

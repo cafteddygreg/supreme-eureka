@@ -1,7 +1,10 @@
   </main>
   
   <footer class="app-footer">
-    <div class="footer-inner">
+    <div class="footer-inner" style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+      <a href="/partager" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--pine); font-size: var(--text-xs); background: var(--pine-50); padding: 6px 14px; border-radius: var(--radius-full); border: 1px solid var(--pine-border);">
+        🤝 Partager Igitoro Live · Tu cherches. Tu observes. Tu aides.
+      </a>
       <p>Information collaborative communautaire · Pas une garantie de stock · <b>Built by Tedd 🇧🇮</b></p>
     </div>
   </footer>
@@ -24,6 +27,17 @@
         </svg>
       </div>
       <span>Signaler</span>
+    </a>
+
+    <a href="/partager" class="tab-item" id="tab-partager">
+      <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="18" cy="5" r="3"></circle>
+        <circle cx="6" cy="12" r="3"></circle>
+        <circle cx="18" cy="19" r="3"></circle>
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+      </svg>
+      <span>Partager</span>
     </a>
 
     <a href="/notifications" class="tab-item" id="tab-alertes">
@@ -54,6 +68,8 @@
         document.getElementById('tab-stations')?.classList.add('active');
       } else if (path === '/signaler') {
         document.getElementById('tab-signaler')?.classList.add('active');
+      } else if (path === '/partager' || path === '/share') {
+        document.getElementById('tab-partager')?.classList.add('active');
       } else if (path === '/notifications') {
         document.getElementById('tab-alertes')?.classList.add('active');
       } else if (path === '/profil') {

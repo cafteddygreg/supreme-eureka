@@ -510,10 +510,40 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+const shareMetrics = {
+  share_opened: 0,
+  share_channel_selected: 0,
+  share_generated: 0,
+  share_native_started: 0,
+  share_fallback_used: 0,
+  by_channel: {}
+};
+
+function getPublicShareOrigin(req) {
+  const configured = (process.env.PUBLIC_SHARE_URL || process.env.APP_URL || '').trim().replace(/\/$/, '');
+  if (configured && !configured.includes('localhost') && !configured.includes('127.0.0.1')) {
+    return configured;
+  }
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = (req.headers['x-forwarded-host'] || req.get('host') || '').trim();
+  if (
+    host &&
+    !host.startsWith('localhost') &&
+    !host.startsWith('127.0.0.1') &&
+    !host.startsWith('0.0.0.0')
+  ) {
+    return `${proto}://${host}`;
+  }
+  return 'https://igitorolive.up.railway.app';
+}
+
 function ctx(req) {
+  const publicOrigin = getPublicShareOrigin(req);
   return {
     user: getCurrentUser(req),
-    googleClientId: process.env.GOOGLE_CLIENT_ID || ''
+    googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+    publicOrigin,
+    canonicalUrl: `${publicOrigin}${req.path || '/'}`
   };
 }
 
@@ -722,6 +752,132 @@ app.get(['/apple-touch-icon.png', '/apple-touch-icon-precomposed.png'], (req, re
 app.get('/favicon.ico', (req, res) => {
   res.type('image/png');
   res.sendFile(path.join(__dirname, 'static', 'icons', 'favicon-32.png'));
+});
+
+app.get('/og-share.png', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.type('image/png');
+  res.sendFile(path.join(__dirname, 'static', 'icons', 'og-share.png'));
+});
+
+// ================= Système de Partage Complet (/partager & /share) =================
+function resolveValidatedShareContext(req) {
+  const activeStations = stations
+    .filter(s => s.is_active)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const allZones = Array.from(new Set(activeStations.map(s => s.zone).filter(Boolean))).sort();
+
+  const rawStationId = parseInt(req.query.station_id || req.query.station || '', 10);
+  const rawZone = String(req.query.zone || '')
+    .replace(/[<>]/g, '')
+    .trim();
+
+  let initialContextType = 'general';
+  let selectedStation = null;
+  let selectedZone = '';
+  let backUrl = '/';
+  let shareTitle = 'Partager Igitoro Live — Tu cherches. Tu observes. Tu aides.';
+  let shareDescription = 'Aidez quelqu’un à trouver du carburant à Bujumbura et faites circuler les observations utiles de la communauté.';
+
+  if (Number.isInteger(rawStationId) && rawStationId > 0) {
+    const foundStation = activeStations.find(s => s.id === rawStationId);
+    if (foundStation) {
+      initialContextType = 'station';
+      selectedStation = {
+        id: foundStation.id,
+        name: foundStation.name,
+        zone: foundStation.zone,
+        commune: foundStation.commune,
+        brand: foundStation.brand || ''
+      };
+      backUrl = `/stations/${foundStation.id}`;
+      shareTitle = `${foundStation.name} (${foundStation.zone}) — Partager sur Igitoro Live`;
+      shareDescription = `Tu cherches. Tu observes. Tu aides. Consultez ou partagez les dernières observations communautaires pour la station ${foundStation.name} (${foundStation.zone}).`;
+    }
+  } else if (rawZone && allZones.includes(rawZone)) {
+    initialContextType = 'zone';
+    selectedZone = rawZone;
+    backUrl = '/notifications';
+    shareTitle = `Quartier ${rawZone} — Partager sur Igitoro Live`;
+    shareDescription = `Tu cherches. Tu observes. Tu aides. Suivez ou partagez les observations communautaires sur les stations-service à ${rawZone} (Bujumbura).`;
+  }
+
+  return {
+    activeStations: activeStations.map(s => ({
+      id: s.id,
+      name: s.name,
+      zone: s.zone,
+      commune: s.commune,
+      brand: s.brand || ''
+    })),
+    allZones,
+    initialContextType,
+    selectedStation,
+    selectedZone,
+    backUrl,
+    shareTitle,
+    shareDescription
+  };
+}
+
+app.get(['/partager', '/share'], (req, res) => {
+  const shareCtx = resolveValidatedShareContext(req);
+  res.render('share', {
+    ...ctx(req),
+    stations: shareCtx.activeStations,
+    zones: shareCtx.allZones,
+    initialContextType: shareCtx.initialContextType,
+    selectedStation: shareCtx.selectedStation,
+    selectedZone: shareCtx.selectedZone,
+    backUrl: shareCtx.backUrl,
+    shareTitle: shareCtx.shareTitle,
+    shareDescription: shareCtx.shareDescription
+  });
+});
+
+app.get('/api/share/context', (req, res) => {
+  const shareCtx = resolveValidatedShareContext(req);
+  const publicOrigin = getPublicShareOrigin(req);
+  let targetUrl = `${publicOrigin}/`;
+  if (shareCtx.initialContextType === 'station' && shareCtx.selectedStation) {
+    targetUrl = `${publicOrigin}/stations/${shareCtx.selectedStation.id}`;
+  } else if (shareCtx.initialContextType === 'zone' && shareCtx.selectedZone) {
+    targetUrl = `${publicOrigin}/?q=${encodeURIComponent(shareCtx.selectedZone)}`;
+  }
+
+  res.json({
+    context_type: shareCtx.initialContextType,
+    station: shareCtx.selectedStation,
+    zone: shareCtx.selectedZone || null,
+    public_origin: publicOrigin,
+    target_url: targetUrl,
+    title: shareCtx.shareTitle,
+    description: shareCtx.shareDescription,
+    motto: 'Tu cherches. Tu observes. Tu aides.'
+  });
+});
+
+app.post('/api/share/event', (req, res) => {
+  const allowedEvents = new Set([
+    'share_opened',
+    'share_channel_selected',
+    'share_generated',
+    'share_native_started',
+    'share_fallback_used'
+  ]);
+  const ev = String((req.body && req.body.event) || '').trim();
+  const ch = String((req.body && req.body.channel) || '')
+    .replace(/[^a-z0-9_]/gi, '')
+    .slice(0, 32);
+
+  if (!allowedEvents.has(ev)) {
+    return res.status(400).json({ detail: 'Événement de partage non reconnu' });
+  }
+  shareMetrics[ev] = (shareMetrics[ev] || 0) + 1;
+  if (ch) {
+    shareMetrics.by_channel[ch] = (shareMetrics.by_channel[ch] || 0) + 1;
+  }
+  res.json({ ok: true, metrics: shareMetrics });
 });
 
 // ================= API: Stations =================

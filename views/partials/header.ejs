@@ -3,8 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title><%= typeof title !== 'undefined' && title ? title : 'Igitoro Live - Carburant Bujumbura' %></title>
-  <meta name="description" content="Plateforme communautaire en temps réel pour suivre la disponibilité de l'essence et du mazout dans les stations-service de Bujumbura.">
+  <%
+    const pageTitle = typeof title !== 'undefined' && title ? title : 'Igitoro Live — Stations-service & Carburant à Bujumbura';
+    const pageDesc = typeof ogDescription !== 'undefined' && ogDescription
+      ? ogDescription
+      : 'Tu cherches. Tu observes. Tu aides. Consultez et partagez en temps réel les observations communautaires sur les stations-service à Bujumbura.';
+    const shareOrigin = typeof publicOrigin !== 'undefined' && publicOrigin ? publicOrigin : 'https://igitorolive.up.railway.app';
+    const pageCanonical = typeof canonicalUrl !== 'undefined' && canonicalUrl ? canonicalUrl : (shareOrigin + '/');
+    const pageOgTitle = typeof ogTitle !== 'undefined' && ogTitle ? ogTitle : pageTitle;
+    const pageOgImage = `${shareOrigin}/static/icons/og-share.png?v=2`;
+  %>
+  <title><%= pageTitle %></title>
+  <meta name="description" content="<%= pageDesc %>">
+  <link rel="canonical" href="<%= pageCanonical %>">
+
+  <!-- Open Graph / WhatsApp / Facebook / LinkedIn -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Igitoro Live">
+  <meta property="og:locale" content="fr_BI">
+  <meta property="og:title" content="<%= pageOgTitle %>">
+  <meta property="og:description" content="<%= pageDesc %>">
+  <meta property="og:url" content="<%= pageCanonical %>">
+  <meta property="og:image" content="<%= pageOgImage %>">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Igitoro Live — Tu cherches. Tu observes. Tu aides. Entraide carburant à Bujumbura">
+
+  <!-- Twitter / X Cards -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="<%= pageOgTitle %>">
+  <meta name="twitter:description" content="<%= pageDesc %>">
+  <meta name="twitter:image" content="<%= pageOgImage %>">
+
+  <!-- Schema.org JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Igitoro Live",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "All",
+    "url": "<%= shareOrigin %>/",
+    "description": "Plateforme citoyenne d'entraide pour consulter, signaler et confirmer les observations sur les stations-service à Bujumbura."
+  }
+  </script>
+
   <link rel="manifest" href="/static/manifest.json?v=2">
   <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg?v=2">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=2">
@@ -34,6 +77,7 @@
       <nav class="desktop-nav" aria-label="Navigation principale">
         <a href="/" class="nav-link">Stations</a>
         <a href="/notifications" class="nav-link">Alertes</a>
+        <a href="/partager" class="nav-link">🤝 Partager</a>
         <a href="/profil" class="nav-link">Profil</a>
         <% if (typeof user !== 'undefined' && user && user.is_admin) { %>
           <a href="/admin" class="nav-link" style="color: #FBD368; font-weight: 700;">Admin</a>
