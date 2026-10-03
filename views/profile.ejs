@@ -1,29 +1,141 @@
-<%- include('partials/header', { title: 'Profil' }) %>
-<h1>Mon profil</h1>
+<%- include('partials/header', { title: 'Mon Profil - Igitoro Live' }) %>
+
+<div style="margin-bottom: 20px;">
+  <h1 style="margin: 0 0 6px; font-size: 1.8rem; color: var(--pine-dark);">Mon Profil</h1>
+  <p class="muted" style="margin: 0;">Gérez vos participations communautaires et vos préférences.</p>
+</div>
+
 <% if (user) { %>
-  <section class="card">
-    <h2><%= user.name %></h2>
-    <p>Compte Google<% if (user.email) { %> · <%= user.email %><% } %></p>
-    <button onclick="logout()">Déconnexion</button>
-    <button class="danger" onclick="deleteAccount()">Supprimer mon compte</button>
+  <!-- Informations du compte -->
+  <section class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h2 style="margin: 0; font-size: 1.3rem; color: var(--pine-dark);"><%= user.name %></h2>
+          <% if (user.is_admin) { %>
+            <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-weight: 700; font-size: 0.75rem;">Administrateur</span>
+          <% } %>
+        </div>
+        <p class="muted" style="margin: 4px 0 0; font-size: 0.88rem;">
+          Connecté via Compte Google <% if (user.email) { %>· <%= user.email %><% } %>
+        </p>
+      </div>
+
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <% if (user.is_admin) { %>
+          <a href="/admin" class="btn btn-primary" style="font-size: 0.85rem;">
+            ⚙️ Tableau de bord Admin
+          </a>
+        <% } %>
+        <button type="button" class="btn" onclick="logout()" style="background: var(--surface); border: 1px solid var(--line); font-size: 0.85rem;">
+          Déconnexion
+        </button>
+      </div>
+    </div>
+
+    <!-- Statistiques utilisateur simples (pas de classement ni de points) -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 0.85rem;">
+      <div>
+        <span class="muted">Signalements partagés :</span>
+        <strong style="display: block; font-size: 1.1rem; color: var(--pine);"><%= reports.length %></strong>
+      </div>
+      <div>
+        <span class="muted">Quartiers suivis :</span>
+        <strong style="display: block; font-size: 1.1rem; color: var(--pine);"><%= subscriptions.length %></strong>
+      </div>
+      <div>
+        <span class="muted">Membre depuis :</span>
+        <strong style="display: block; font-size: 0.9rem; color: var(--ink);"><%= new Date(user.created_at).toLocaleDateString('fr-FR') %></strong>
+      </div>
+    </div>
   </section>
-  <h2>Quartiers suivis</h2>
-  <div class="chips">
-    <% for (const s of subscriptions) { %>
-      <span class="chip selected"><%= s.zone %></span>
+
+  <!-- Quartiers suivis -->
+  <section class="card" style="margin-bottom: 20px;">
+    <h2 style="margin-top: 0; font-size: 1.15rem; color: var(--pine-dark);">Quartiers suivis</h2>
+    <% if (subscriptions.length === 0) { %>
+      <p class="muted" style="font-size: 0.88rem; margin: 6px 0 12px;">Vous ne suivez aucun quartier pour le moment.</p>
+      <a href="/notifications" class="btn btn-primary" style="font-size: 0.85rem;">Choisir des quartiers à suivre</a>
+    <% } else { %>
+      <div class="chips" style="gap: 8px; margin-top: 8px;">
+        <% for (const s of subscriptions) { %>
+          <span class="chip selected" style="display: inline-flex; align-items: center; gap: 6px;">
+            <span><%= s.zone %></span>
+            <button type="button" onclick="unsubscribeZone('<%= s.zone %>')" style="background: transparent; border: none; color: white; cursor: pointer; padding: 0; font-size: 0.8rem; line-height: 1;" title="Ne plus suivre">✕</button>
+          </span>
+        <% } %>
+      </div>
+      <div style="margin-top: 12px;">
+        <a href="/notifications" style="font-size: 0.82rem; color: var(--pine); font-weight: 600;">Gérer tous les quartiers →</a>
+      </div>
     <% } %>
-  </div>
-  <h2>Mes signalements</h2>
-  <% for (const r of reports) { %>
-    <article class="card">
-      <%= r.station ? r.station.name : 'Station' %> · <%= r.fuel_status %>
-      <button onclick="deleteReport(<%= r.id %>)">Supprimer</button>
-    </article>
-  <% } %>
+  </section>
+
+  <!-- Mes signalements -->
+  <section class="card" style="margin-bottom: 24px;">
+    <h2 style="margin-top: 0; font-size: 1.15rem; color: var(--pine-dark);">Mes observations récentes (<%= reports.length %>)</h2>
+    <% if (reports.length === 0) { %>
+      <p class="muted" style="font-size: 0.88rem; margin: 6px 0 12px;">Vous n'avez pas encore envoyé de signalement.</p>
+      <a href="/signaler" class="btn btn-primary" style="font-size: 0.85rem;">Faire un signalement</a>
+    <% } else { %>
+      <div style="display: grid; gap: 10px; margin-top: 10px;">
+        <% for (const r of reports) { %>
+          <div style="background: var(--surface-subtle); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong style="color: var(--pine-dark); font-size: 0.95rem;"><%= r.station ? r.station.name : 'Station' %></strong>
+              <div style="font-size: 0.82rem; color: var(--muted); margin-top: 2px;">
+                Statut : <%= r.fuel_status %> · <%= new Date(r.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) %>
+              </div>
+            </div>
+            <button type="button" class="btn danger" onclick="deleteReport(<%= r.id %>)" style="font-size: 0.78rem; padding: 6px 12px;">
+              Supprimer
+            </button>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+  </section>
+
+  <!-- Zone de danger : suppression du compte -->
+  <section class="card" style="border: 1px solid var(--crimson-soft); background: #FFFBFB;">
+    <h3 style="margin-top: 0; font-size: 1rem; color: var(--crimson);">Zone de gestion du compte</h3>
+    <p class="muted" style="font-size: 0.84rem; line-height: 1.4; margin-bottom: 12px;">
+      La suppression de votre compte anonymise définitivement vos données personnelles tout en préservant l'intégrité des statistiques communautaires d'Igitoro Live.
+    </p>
+    <button type="button" class="btn danger" onclick="deleteAccount()" style="font-size: 0.84rem;">
+      Supprimer définitivement mon compte
+    </button>
+  </section>
+
 <% } else { %>
-  <section class="card">
-    <p>Connectez-vous avec Google pour participer.</p>
-    <button class="button" onclick="googleMockLogin()">Google Sign-In</button>
+  <!-- Utilisateur non connecté -->
+  <section class="card" style="text-align: center; padding: 36px 16px;">
+    <div style="font-size: 2.2rem; margin-bottom: 8px;">👤</div>
+    <h2 style="margin: 0 0 8px; font-size: 1.3rem; color: var(--pine-dark);">Connexion à Igitoro Live</h2>
+    <p class="muted" style="max-width: 480px; margin: 0 auto 20px; font-size: 0.9rem; line-height: 1.4;">
+      La connexion via votre compte Google vous permet de signaler l'état des stations, suivre vos quartiers favoris et gérer vos participations.
+    </p>
+
+    <!-- Google Sign-In -->
+    <div style="display: inline-block;">
+      <button type="button" class="btn btn-primary" onclick="googleMockLogin()" style="padding: 12px 24px; font-size: 1rem; box-shadow: var(--shadow-md);">
+        <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right: 8px;"><path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+        Se connecter avec Google
+      </button>
+    </div>
   </section>
 <% } %>
+
+<script>
+  async function unsubscribeZone(zone) {
+    if (!confirm('Ne plus suivre le quartier ' + zone + ' ?')) return;
+    const r = await fetch('/api/notifications/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zone })
+    });
+    if (r.ok) location.reload();
+  }
+</script>
+
 <%- include('partials/footer') %>

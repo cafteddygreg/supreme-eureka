@@ -1,71 +1,286 @@
-<%- include('partials/header', { title: station ? station.name : 'Station' }) %>
+<%- include('partials/header', { title: station ? station.name + ' - Igitoro Live' : 'Station introuvable' }) %>
+
 <% if (station) { %>
-  <a href="/">← Retour</a>
-  <section>
-    <span class="chip"><%= station.zone %></span>
-    <h1><%= station.name %></h1>
-    <p><%= station.location_text %><%= station.landmark ? ' · ' + station.landmark : '' %></p>
-    <a class="button" target="_blank" href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(station.location_text + ' ' + station.name) %>">Voir l’itinéraire</a>
-  </section>
-  <section class="card">
-    <h2>Situation récente</h2>
-    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
-      <b style="font-size: 1.1rem; color: var(--pine-dark);"><%= statusLabels[state.status] || 'Pas d’information récente' %></b>
-      <% if (state.fuel_type === 'essence') { %>
-        <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-weight: 700; font-size: 0.8rem;">⛽ Juste Essence dispo</span>
-      <% } else if (state.fuel_type === 'mazout') { %>
-        <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-weight: 700; font-size: 0.8rem;">🛢️ Juste Mazout dispo</span>
-      <% } else if (state.fuel_type === 'both') { %>
-        <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-weight: 700; font-size: 0.8rem;">⛽🛢️ Essence & Mazout dispos</span>
+  <div style="margin-bottom: 14px;">
+    <a href="/" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; color: var(--pine);">
+      ← Retour aux stations
+    </a>
+  </div>
+
+  <!-- Entête de la station -->
+  <section class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
+      <% if (station.commune) { %>
+        <span class="chip" style="background: var(--pine); color: white; font-size: 0.75rem;"><%= station.commune %></span>
+      <% } %>
+      <span class="chip"><%= station.zone %></span>
+      <% if (station.brand) { %>
+        <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-weight: 700;"><%= station.brand %></span>
+      <% } %>
+      <% if (station.is_verified) { %>
+        <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-weight: 700; font-size: 0.75rem;">
+          ✓ Station vérifiée (Gérant officiel validé)
+        </span>
       <% } %>
     </div>
-    <p>File : <%= state.queue %> · <%= state.freshness %></p>
-    <p>Confirmations : <%= state.confirmations %> · Contradictions : <%= state.contradictions %></p>
+
+    <h1 style="margin: 4px 0 8px; font-size: 1.8rem; color: var(--pine-dark);"><%= station.name %></h1>
+    <p style="margin: 0 0 6px; font-size: 0.95rem; color: var(--ink-secondary);"><%= station.location_text %></p>
+    <% if (station.landmark) { %>
+      <p class="muted" style="margin: 0 0 12px; font-size: 0.85rem;">Repère : <%= station.landmark %></p>
+    <% } %>
+
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px;">
+      <a class="button btn-primary" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(station.location_text + ' ' + station.name + ' Bujumbura') %>">
+        🗺️ Voir l'itinéraire
+      </a>
+      <% if (!station.is_verified) { %>
+        <button type="button" class="btn" onclick="openClaimModal()" style="background: var(--surface); border: 1px solid var(--line); font-size: 0.84rem; color: var(--muted);">
+          Revendiquer cette station
+        </button>
+      <% } %>
+    </div>
   </section>
-  <% for (const r of reports) { %>
-    <article class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
-        <div>
-          <b><%= statusLabels[r.fuel_status] || r.fuel_status %></b> · file <%= r.queue_status %>
+
+  <!-- Situation récente calculée -->
+  <section class="card" style="border-left: 4px solid var(--pine); margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <small style="text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); font-size: 0.72rem;">Situation observée en direct</small>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px;">
+          <strong style="font-size: 1.3rem; color: var(--pine-dark);">
+            <%= statusLabels[state.status] || 'Pas d’information récente' %>
+          </strong>
+          <% if (state.fuel_type === 'essence') { %>
+            <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-weight: 700;">⛽ Juste Essence dispo</span>
+          <% } else if (state.fuel_type === 'mazout') { %>
+            <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-weight: 700;">🛢️ Juste Mazout dispo</span>
+          <% } else if (state.fuel_type === 'both') { %>
+            <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-weight: 700;">⛽🛢️ Essence & Mazout dispos</span>
+          <% } %>
         </div>
-        <% if (r.fuel_type === 'essence') { %>
-          <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-size: 0.75rem; font-weight: 700;">⛽ Juste Essence</span>
-        <% } else if (r.fuel_type === 'mazout') { %>
-          <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-size: 0.75rem; font-weight: 700;">🛢️ Juste Mazout</span>
-        <% } else if (r.fuel_type === 'both') { %>
-          <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-size: 0.75rem; font-weight: 700;">⛽🛢️ Essence & Mazout</span>
+      </div>
+      <div style="text-align: right;">
+        <span class="chip" style="background: var(--surface-subtle); border: 1px solid var(--line); font-size: 0.75rem;">
+          <%= state.freshness %>
+        </span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 0.88rem;">
+      <div>
+        <span class="muted">File d'attente :</span>
+        <strong>
+          <%= state.queue === 'none' ? 'Pas de file' : (state.queue === 'short' ? 'Courte' : (state.queue === 'medium' ? 'Moyenne' : (state.queue === 'long' ? 'Longue' : 'Inconnue'))) %>
+          <% if (state.report && state.report.approximate_count && state.report.approximate_count !== 'unknown') { %>
+            (~<%= state.report.approximate_count %> véh.)
+          <% } %>
+        </strong>
+      </div>
+      <div>
+        <span class="muted">Statut station :</span>
+        <strong>
+          <%= state.report && state.report.station_open === 'yes' ? 'Ouverte' : (state.report && state.report.station_open === 'no' ? 'Fermée' : 'Inconnu') %>
+        </strong>
+      </div>
+      <div>
+        <span class="muted">Retours :</span>
+        <strong style="color: var(--emerald-600);"><%= state.confirmations %> confirmations</strong>
+        <% if (state.contradictions > 0) { %>
+          · <strong style="color: var(--crimson);"><%= state.contradictions %> contestations</strong>
         <% } %>
       </div>
-      <p><%= r.comment || '' %></p>
-      <% if (r.photo_path) { %>
-        <div style="margin-top: 10px;">
-          <img src="<%= r.photo_path %>" alt="Photo prise en direct à la station" style="max-width: 100%; border-radius: var(--radius-sm); border: 1.5px solid var(--pine-border); display: block;">
-          <span style="display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.76rem; font-weight: 700; color: var(--emerald-600); background: var(--emerald-100); padding: 3px 10px; border-radius: var(--radius-full);">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            Photo prise en direct sur place
-          </span>
-        </div>
+    </div>
+  </section>
+
+  <!-- Liste des signalements communautaires -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+    <h2 style="margin: 0; font-size: 1.25rem; color: var(--pine-dark);">Signalements communautaires (<%= reports.length %>)</h2>
+    <a href="/signaler" class="btn btn-primary" style="font-size: 0.85rem; padding: 8px 14px;">+ Ajouter mon observation</a>
+  </div>
+
+  <% if (reports.length === 0) { %>
+    <div class="card" style="text-align: center; padding: 32px 16px; color: var(--muted);">
+      <p style="margin: 0 0 10px; font-weight: 600;">Aucun signalement récent pour cette station.</p>
+      <p style="font-size: 0.88rem; margin: 0 0 16px;">Vous êtes sur place ou vous venez d'y passer ? Partagez l'information.</p>
+      <a href="/signaler" class="btn btn-primary">Faire le premier signalement</a>
+    </div>
+  <% } else { %>
+    <div style="display: grid; gap: 14px;">
+      <% for (const r of reports) { %>
+        <article class="card" style="border: 1px solid var(--line);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <strong style="font-size: 1rem; color: var(--pine-dark);"><%= statusLabels[r.fuel_status] || r.fuel_status %></strong>
+                <% if (r.fuel_type === 'essence') { %>
+                  <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-size: 0.72rem; font-weight: 700;">⛽ Essence seule</span>
+                <% } else if (r.fuel_type === 'mazout') { %>
+                  <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-size: 0.72rem; font-weight: 700;">🛢️ Mazout seul</span>
+                <% } else if (r.fuel_type === 'both') { %>
+                  <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-size: 0.72rem; font-weight: 700;">⛽🛢️ Essence & Mazout</span>
+                <% } %>
+              </div>
+              <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--muted);">
+                File : <%= r.queue_status === 'none' ? 'Pas de file' : (r.queue_status === 'short' ? 'Courte' : (r.queue_status === 'medium' ? 'Moyenne' : (r.queue_status === 'long' ? 'Longue' : 'Inconnue'))) %>
+                <% if (r.approximate_count && r.approximate_count !== 'unknown') { %>
+                  (~<%= r.approximate_count %> véh.)
+                <% } %>
+                · <%= r.station_open === 'yes' ? 'Station ouverte' : (r.station_open === 'no' ? 'Station fermée' : '') %>
+              </p>
+            </div>
+            <small class="muted"><%= new Date(r.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) %></small>
+          </div>
+
+          <% if (r.comment) { %>
+            <p style="margin: 10px 0 0; font-size: 0.92rem; line-height: 1.4; color: var(--ink); background: var(--surface-subtle); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
+              <%= r.comment %>
+            </p>
+          <% } %>
+
+          <% if (r.photo_path) { %>
+            <div style="margin-top: 12px;">
+              <img src="<%= r.photo_path %>" alt="Photo prise en direct à la station" style="max-width: 100%; max-height: 320px; border-radius: var(--radius-sm); border: 1.5px solid var(--pine-border); display: block;">
+              <span style="display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.75rem; font-weight: 700; color: var(--emerald-600); background: var(--emerald-100); padding: 3px 10px; border-radius: var(--radius-full);">
+                ✓ Photo prise en direct sur place
+              </span>
+            </div>
+          <% } %>
+
+          <!-- Confirmations & Contradictions & Modération -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" class="btn" onclick="verifyReport(<%= r.id %>, 'confirm')" style="background: var(--surface-subtle); border: 1px solid var(--line); font-size: 0.82rem; padding: 6px 12px;">
+                👍 Confirmer (<%= r.confirmCount || 0 %>)
+              </button>
+              <button type="button" class="btn" onclick="verifyReport(<%= r.id %>, 'no_longer_true')" style="background: var(--surface-subtle); border: 1px solid var(--line); font-size: 0.82rem; padding: 6px 12px;">
+                👎 Ce n’est plus vrai (<%= r.contradictCount || 0 %>)
+              </button>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <% if (typeof user !== 'undefined' && user && (r.user_id === user.id || user.is_admin)) { %>
+                <button type="button" class="btn danger" onclick="deleteReport(<%= r.id %>)" style="font-size: 0.78rem; padding: 5px 10px;">
+                  Supprimer
+                </button>
+              <% } %>
+              <button type="button" class="btn" onclick="openAbuseModal(<%= r.id %>)" style="background: transparent; border: none; font-size: 0.78rem; color: var(--muted); text-decoration: underline; cursor: pointer;">
+                Signaler un abus
+              </button>
+            </div>
+          </div>
+        </article>
       <% } %>
-      <div class="actions">
-        <button onclick="verifyReport(<%= r.id %>, 'confirm')">Confirmer</button>
-        <button onclick="verifyReport(<%= r.id %>, 'no_longer_true')">Ce n’est plus vrai</button>
-        <button onclick="openAbuseModal(<%= r.id %>)">Signaler un abus</button>
-      </div>
-    </article>
+    </div>
   <% } %>
+
+  <!-- Modal Signalement d'Abus -->
   <div id="abuse-modal" class="modal hidden">
     <div class="modal-card">
-      <h2>Signaler un abus</h2>
-      <input type="radio" name="abuse_reason" value="Faux signalement" checked> Faux signalement<br>
-      <input type="radio" name="abuse_reason" value="Spam"> Spam<br>
-      <input type="radio" name="abuse_reason" value="Insulte/comportement abusif"> Insulte / comportement abusif<br>
-      <input type="radio" name="abuse_reason" value="Autre"> Autre
-      <textarea id="abuse-details" placeholder="Détails facultatifs"></textarea>
-      <button onclick="closeAbuseModal()">Annuler</button>
-      <button class="danger" onclick="submitAbuse()">Signaler</button>
+      <h2 style="margin-top: 0; font-size: 1.2rem; color: var(--pine-dark);">Signaler un abus</h2>
+      <p class="muted" style="font-size: 0.85rem; margin-bottom: 12px;">Aidez à préserver la fiabilité d'Igitoro Live :</p>
+      
+      <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+        <label><input type="radio" name="abuse_reason" value="Faux signalement" checked> Faux signalement / fausse information</label>
+        <label><input type="radio" name="abuse_reason" value="Spam"> Spam / publicité non sollicitée</label>
+        <label><input type="radio" name="abuse_reason" value="Insulte/comportement abusif"> Insulte ou comportement abusif</label>
+        <label><input type="radio" name="abuse_reason" value="Autre"> Autre problème</label>
+      </div>
+
+      <textarea id="abuse-details" placeholder="Précisez pourquoi ce signalement est problématique..." style="width: 100%; min-height: 80px;"></textarea>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+        <button type="button" class="btn" onclick="closeAbuseModal()" style="background: var(--surface); border: 1px solid var(--line);">Annuler</button>
+        <button type="button" class="btn danger" onclick="submitAbuse()">Envoyer le signalement</button>
+      </div>
     </div>
   </div>
+
+  <!-- Modal Revendication de Station -->
+  <div id="claim-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2 style="margin-top: 0; font-size: 1.2rem; color: var(--pine-dark);">Revendiquer cette station</h2>
+      <p class="muted" style="font-size: 0.85rem; margin-bottom: 12px;">
+        Vous êtes gérant, propriétaire ou représentant officiel de cette station-service ? Déposez une demande de rattachement examinée par l'administration.
+      </p>
+
+      <form onsubmit="submitClaim(event)">
+        <label>Votre nom et prénom *
+          <input type="text" id="claim_contact_name" required placeholder="ex: Jean Nkurunziza">
+        </label>
+        <label>Votre numéro de téléphone professionnel *
+          <input type="tel" id="claim_phone" required placeholder="ex: +257 79 000 000">
+        </label>
+        <label>Votre rôle à la station *
+          <select id="claim_role" required>
+            <option value="Gérant">Gérant de la station</option>
+            <option value="Propriétaire">Propriétaire / Exploitante</option>
+            <option value="Chef de piste">Chef de piste / Responsable</option>
+            <option value="Autre représentant">Autre représentant officiel</option>
+          </select>
+        </label>
+        <label>Justificatif ou précisions (localisation bureau, document d'exploitation)
+          <textarea id="claim_proof" placeholder="Précisez tout élément utile pour vérifier votre identité..."></textarea>
+        </label>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+          <button type="button" class="btn" onclick="closeClaimModal()" style="background: var(--surface); border: 1px solid var(--line);">Annuler</button>
+          <button type="submit" class="btn btn-primary">Soumettre la demande</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
 <% } else { %>
-  <div class="card">Station introuvable.</div>
+  <div class="card" style="text-align: center; padding: 36px 16px;">
+    <h2>Station introuvable</h2>
+    <p class="muted">Cette station n'existe pas ou a été désactivée.</p>
+    <a href="/" class="btn btn-primary">Retour aux stations</a>
+  </div>
 <% } %>
+
+<script>
+  function openClaimModal() {
+    document.getElementById('claim-modal')?.classList.remove('hidden');
+  }
+  function closeClaimModal() {
+    document.getElementById('claim-modal')?.classList.add('hidden');
+  }
+
+  async function submitClaim(e) {
+    e.preventDefault();
+    const payload = {
+      contact_name: document.getElementById('claim_contact_name').value.trim(),
+      phone: document.getElementById('claim_phone').value.trim(),
+      role: document.getElementById('claim_role').value,
+      proof_details: document.getElementById('claim_proof').value.trim()
+    };
+
+    const stationId = <%= station ? station.id : 0 %>;
+    const r = await fetch('/api/stations/' + stationId + '/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const d = await r.json();
+    if (r.ok) {
+      closeClaimModal();
+      alert('Demande de revendication transmise à l\'administration avec succès.');
+    } else {
+      alert(d.detail || 'Erreur lors de la transmission de la demande.');
+    }
+  }
+
+  async function deleteReport(id) {
+    if (!confirm('Voulez-vous vraiment supprimer ce signalement ?')) return;
+    const r = await fetch('/api/reports/' + id, { method: 'DELETE' });
+    if (r.ok) {
+      location.reload();
+    } else {
+      const d = await r.json();
+      alert(d.detail || 'Erreur lors de la suppression.');
+    }
+  }
+</script>
+
 <%- include('partials/footer') %>

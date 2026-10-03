@@ -60,10 +60,59 @@
   <fieldset>
     <legend>État de la file d'attente</legend>
     <label><input type="radio" name="queue_status" value="none" required> Pas de file d'attente</label>
-    <label><input type="radio" name="queue_status" value="short" required> File courte (moins de 10 véhicules/motos)</label>
-    <label><input type="radio" name="queue_status" value="medium" required> File moyenne (10 à 30 véhicules)</label>
-    <label><input type="radio" name="queue_status" value="long" required> File longue (plus de 30 véhicules)</label>
+    <label><input type="radio" name="queue_status" value="short" required> File courte</label>
+    <label><input type="radio" name="queue_status" value="medium" required> File moyenne</label>
+    <label><input type="radio" name="queue_status" value="long" required> File longue</label>
     <label><input type="radio" name="queue_status" value="unknown" required> Non visible / inconnu</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Estimation de la file <span style="font-weight: normal; font-size: 0.8rem; color: var(--muted);">(Facultatif)</span></legend>
+    <p style="font-size: 0.82rem; color: var(--muted); margin: 2px 0 8px;">Estimation communautaire du nombre de véhicules :</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="approximate_count" value="unknown" checked>
+        <span>Je ne sais pas</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="approximate_count" value="1-10">
+        <span>1–10</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="approximate_count" value="10-30">
+        <span>10–30</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="approximate_count" value="30-60">
+        <span>30–60</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="approximate_count" value="60-100">
+        <span>60–100</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="approximate_count" value="100+">
+        <span>100+</span>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>La station est-elle ouverte ?</legend>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;">
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="station_open" value="yes">
+        <span>🟢 Ouverte</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="station_open" value="no">
+        <span>🔴 Fermée</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="station_open" value="unknown" checked>
+        <span>⚪ Je ne sais pas</span>
+      </label>
+    </div>
   </fieldset>
 
   <label style="font-weight: 600; display: block; margin-top: 14px;">Commentaire utile (facultatif)

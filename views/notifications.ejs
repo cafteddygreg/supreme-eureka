@@ -1,19 +1,122 @@
-<%- include('partials/header', { title: 'Alertes' }) %>
-<h1>Alertes par quartier</h1>
-<div class="card">Les alertes utilisent les nouveaux signalements. Igitoro Live ne suit pas votre position.</div>
-<h2>Événements récents</h2>
-<% for (const r of recent) { %>
-  <article class="card">
-    <%= r.station ? r.station.name : 'Station' %> · <%= r.station ? r.station.zone : '' %>
-    <small><%= r.created_at %></small>
-  </article>
-<% } %>
-<h2>Quartiers suivis</h2>
-<div class="chips">
-  <% for (const z of zones) { %>
-    <button class="chip <%= subscribed.has(z) ? 'selected' : '' %>" onclick="toggleZone(this, '<%= z %>')">
-      <%= z %> <%= subscribed.has(z) ? '✓' : '+' %>
-    </button>
-  <% } %>
+<%- include('partials/header', { title: 'Alertes par Quartier - Igitoro Live' }) %>
+
+<div style="margin-bottom: 20px;">
+  <h1 style="margin: 0 0 6px; font-size: 1.8rem; color: var(--pine-dark);">Alertes & Notifications</h1>
+  <p class="muted" style="margin: 0;">Suivez vos zones habituelles pour être informé dès que du carburant est disponible. Aucun suivi GPS.</p>
 </div>
+
+<!-- Synthèse des activités groupées par quartier -->
+<section style="margin-bottom: 24px;">
+  <h2 style="font-size: 1.25rem; color: var(--pine-dark); margin-bottom: 12px;">Dernières activités par quartier</h2>
+
+  <% if (typeof groupedAlerts !== 'undefined' && groupedAlerts.length > 0) { %>
+    <div style="display: grid; gap: 12px;">
+      <% for (const g of groupedAlerts) { %>
+        <article class="card" style="border-left: 4px solid var(--pine);">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px;">
+            <strong style="color: var(--pine-dark); font-size: 1rem;"><%= g.zone %></strong>
+            <small class="muted"><%= g.freshness %></small>
+          </div>
+          <p style="margin: 6px 0 4px; font-size: 0.9rem;">
+            <%= g.summary %>
+          </p>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+            <% for (const st of g.stations) { %>
+              <span class="chip" style="font-size: 0.75rem; background: var(--surface-subtle); border: 1px solid var(--line);">
+                <%= st.name %> : <strong><%= st.statusLabel %></strong>
+              </span>
+            <% } %>
+          </div>
+        </article>
+      <% } %>
+    </div>
+  <% } else { %>
+    <div class="card" style="text-align: center; padding: 24px; color: var(--muted);">
+      Aucune activité récente signalée dans les dernières heures.
+    </div>
+  <% } %>
+</section>
+
+<!-- Gestion des quartiers suivis -->
+<section class="card" style="margin-bottom: 24px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <h2 style="margin: 0; font-size: 1.15rem; color: var(--pine-dark);">Vos quartiers suivis</h2>
+      <p class="muted" style="margin: 2px 0 0; font-size: 0.84rem;">Touchez un quartier pour l'ajouter ou le retirer de vos alertes :</p>
+    </div>
+    <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-size: 0.8rem;">
+      <%= subscribed.size %> quartier<%= subscribed.size > 1 ? 's' : '' %> suivi<%= subscribed.size > 1 ? 's' : '' %>
+    </span>
+  </div>
+
+  <div class="chips" style="gap: 8px;">
+    <% for (const z of zones) { %>
+      <button 
+        type="button" 
+        class="chip <%= subscribed.has(z) ? 'selected' : '' %>" 
+        onclick="toggleZone(this, '<%= z %>')"
+        style="cursor: pointer; font-size: 0.85rem; padding: 8px 14px;"
+      >
+        <span><%= z %></span>
+        <span style="margin-left: 4px; font-weight: 700;"><%= subscribed.has(z) ? '✓' : '+' %></span>
+      </button>
+    <% } %>
+  </div>
+</section>
+
+<!-- Préférences de notification de l'appareil -->
+<section class="card" style="background: var(--surface-subtle);">
+  <h2 style="margin-top: 0; font-size: 1.05rem; color: var(--pine-dark);">Paramètres de notification sur cet appareil</h2>
+  <p class="muted" style="font-size: 0.84rem; line-height: 1.4; margin-bottom: 14px;">
+    Vous pouvez autoriser les notifications du navigateur pour être prévenu sur votre téléphone ou ordinateur lorsqu'un de vos quartiers suivis reçoit un signalement positif.
+  </p>
+
+  <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+    <button type="button" class="btn btn-primary" onclick="requestBrowserNotification()" style="font-size: 0.88rem;">
+      🔔 Activer les notifications de l'appareil
+    </button>
+    <button type="button" class="btn" onclick="testDeviceVibration()" style="background: var(--surface); border: 1px solid var(--line); font-size: 0.88rem;">
+      📳 Tester la vibration
+    </button>
+  </div>
+  <p id="notif-status" style="font-size: 0.8rem; color: var(--muted); margin-top: 10px;"></p>
+</section>
+
+<script>
+  function requestBrowserNotification() {
+    const statusEl = document.getElementById('notif-status');
+    if (!('Notification' in window)) {
+      statusEl.textContent = "Les notifications ne sont pas prises en charge par ce navigateur.";
+      return;
+    }
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') {
+        statusEl.textContent = "✓ Notifications autorisées sur cet appareil !";
+        statusEl.style.color = "var(--emerald-600)";
+        try {
+          new Notification("Igitoro Live", {
+            body: "Les alertes pour vos quartiers suivis sont activées.",
+            icon: "/static/icons/favicon-32.png"
+          });
+        } catch(e) {}
+      } else {
+        statusEl.textContent = "Notifications bloquées ou non autorisées.";
+        statusEl.style.color = "var(--crimson)";
+      }
+    });
+  }
+
+  function testDeviceVibration() {
+    const statusEl = document.getElementById('notif-status');
+    if ('vibrate' in navigator) {
+      navigator.vibrate([150, 80, 150]);
+      statusEl.textContent = "✓ Vibration déclenchée (si autorisée par votre système).";
+      statusEl.style.color = "var(--pine)";
+    } else {
+      statusEl.textContent = "La vibration n'est pas prise en charge sur ce système.";
+      statusEl.style.color = "var(--muted)";
+    }
+  }
+</script>
+
 <%- include('partials/footer') %>
