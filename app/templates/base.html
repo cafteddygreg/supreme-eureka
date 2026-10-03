@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Igitoro Live{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+  <meta name="theme-color" content="#1A3C2A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Igitoro">
+  {% if client_id %}
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  {% endif %}
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">Igitoro <b>Live</b></a>
+    <nav>
+      <a href="/">Stations</a>
+      <a href="/signaler">Signaler</a>
+      <a href="/notifications">Alertes</a>
+      <a href="/profil">Profil</a>
+    </nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer>Information communautaire · Pas une garantie · <b>Built by Tedd 🇧🇮</b></footer>
+  <script src="/static/js/search.js"></script>
+  <script src="/static/js/reports.js"></script>
+  <script src="/static/js/profile.js"></script>
+</body>
+</html>

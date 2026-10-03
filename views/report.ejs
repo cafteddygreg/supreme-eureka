@@ -1,40 +1,148 @@
-<%- include('partials/header', { title: 'Signaler' }) %>
+<%- include('partials/header', { title: 'Signaler la disponibilité - Igitoro Live' }) %>
 <h1>Nouveau signalement</h1>
-<form id="report-form" class="card" enctype="multipart/form-data" onsubmit="submitReport(event)">
-  <label>Station
-    <select name="station_id" required>
-      <option value="">Choisir</option>
+<p class="muted" style="margin-bottom: 16px;">Partagez votre observation en direct pour aider la communauté à Bujumbura.</p>
+
+<form id="report-form" class="card" onsubmit="submitReport(event)">
+  <label style="font-weight: 600;">Station-service
+    <select name="station_id" id="report_station_id" required style="margin-top: 6px;">
+      <option value="">Sélectionner une station…</option>
       <% for (const s of stations) { %>
-        <option value="<%= s.id %>"><%= s.name %> — <%= s.zone %></option>
+        <option value="<%= s.id %>"><%= s.name %> — <%= s.commune ? s.commune + ' (' + s.zone + ')' : s.zone %></option>
       <% } %>
     </select>
   </label>
-  <label><input type="checkbox" id="new-station-toggle" onchange="toggleNewStation()"> Je ne trouve pas ma station</label>
-  <div id="new-station-fields" class="hidden">
-    <input id="new-station-name" placeholder="Nom">
-    <input id="new-station-brand" placeholder="Marque">
-    <input id="new-station-zone" placeholder="Quartier">
-    <input id="new-station-location" placeholder="Localisation / repère">
-    <button type="button" onclick="createAndSelectStation()">Inscrire cette station</button>
+
+  <label style="font-size: 0.88rem; margin: 8px 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+    <input type="checkbox" id="new-station-toggle" onchange="toggleNewStation()"> 
+    <span>Je ne trouve pas ma station dans la liste</span>
+  </label>
+
+  <div id="new-station-fields" class="hidden" style="background: var(--surface-subtle); padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--line); margin: 10px 0;">
+    <p style="font-size: 0.85rem; font-weight: 600; color: var(--pine); margin-bottom: 8px;">Ajouter une station manquante</p>
+    <input id="new-station-name" placeholder="Nom de la station (ex: Kobil Rohero)">
+    <input id="new-station-brand" placeholder="Marque (ex: Kobil, InterPetrol, Delta)">
+    <input id="new-station-zone" placeholder="Quartier / Zone (ex: Rohero)">
+    <input id="new-station-location" placeholder="Localisation précise / point de repère">
+    <button type="button" class="btn btn-primary" onclick="createAndSelectStation()" style="margin-top: 8px; width: 100%;">Inscrire et sélectionner cette station</button>
   </div>
+
   <fieldset>
-    <legend>Carburant</legend>
-    <label><input type="radio" name="fuel_status" value="distribution" required> On distribue</label>
-    <label><input type="radio" name="fuel_status" value="no_fuel" required> Pas de carburant</label>
-    <label><input type="radio" name="fuel_status" value="starting" required> Ça semble commencer</label>
-    <label><input type="radio" name="fuel_status" value="unknown" required> Je ne sais pas</label>
+    <legend>Disponibilité du carburant</legend>
+    <label><input type="radio" name="fuel_status" value="distribution" required> 🟢 On distribue actuellement</label>
+    <label><input type="radio" name="fuel_status" value="starting" required> 🟡 Ça semble commencer (camion-citerne / mise en place)</label>
+    <label><input type="radio" name="fuel_status" value="no_fuel" required> 🔴 Pas de carburant / pompes à sec</label>
+    <label><input type="radio" name="fuel_status" value="unknown" required> ⚪ Je ne sais pas précisément</label>
   </fieldset>
+
   <fieldset>
-    <legend>File</legend>
-    <label><input type="radio" name="queue_status" value="none" required> Pas de file</label>
-    <label><input type="radio" name="queue_status" value="short" required> Courte</label>
-    <label><input type="radio" name="queue_status" value="medium" required> Moyenne</label>
-    <label><input type="radio" name="queue_status" value="long" required> Longue</label>
-    <label><input type="radio" name="queue_status" value="unknown" required> Je ne sais pas</label>
+    <legend>Type de carburant disponible <span style="font-weight: normal; font-size: 0.8rem; color: var(--muted);">(Facultatif)</span></legend>
+    <p style="font-size: 0.82rem; color: var(--muted); margin: 2px 0 8px;">Si vous le savez, précisez quel type de carburant est disponible :</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px;">
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="fuel_type" value="unspecified" checked>
+        <span>❓ Non précisé</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="fuel_type" value="essence">
+        <span>⛽ Juste Essence</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="fuel_type" value="mazout">
+        <span>🛢️ Juste Mazout</span>
+      </label>
+      <label style="border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+        <input type="radio" name="fuel_type" value="both">
+        <span>⛽🛢️ Les deux</span>
+      </label>
+    </div>
   </fieldset>
-  <textarea name="comment" maxlength="1000" placeholder="Commentaire"></textarea>
-  <input id="photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" capture="environment">
-  <button class="button">Envoyer</button>
-  <p id="report-message"></p>
+
+  <fieldset>
+    <legend>État de la file d'attente</legend>
+    <label><input type="radio" name="queue_status" value="none" required> Pas de file d'attente</label>
+    <label><input type="radio" name="queue_status" value="short" required> File courte (moins de 10 véhicules/motos)</label>
+    <label><input type="radio" name="queue_status" value="medium" required> File moyenne (10 à 30 véhicules)</label>
+    <label><input type="radio" name="queue_status" value="long" required> File longue (plus de 30 véhicules)</label>
+    <label><input type="radio" name="queue_status" value="unknown" required> Non visible / inconnu</label>
+  </fieldset>
+
+  <label style="font-weight: 600; display: block; margin-top: 14px;">Commentaire utile (facultatif)
+    <textarea name="comment" maxlength="1000" placeholder="Précisez le type de carburant disponible (essence, mazout), le flux des pompes, etc." style="margin-top: 6px;"></textarea>
+  </label>
+
+  <!-- ================= MODULE PHOTO EXCLUSIVEMENT CAMÉRA EN DIRECT (ZÉRO FICHIER / ZÉRO GALERIE) ================= -->
+  <div class="live-camera-card" style="border: 2px dashed var(--pine); background: var(--pine-soft); padding: 18px; margin: 18px 0; border-radius: var(--radius-md);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 1.3rem;">📸</span>
+        <strong style="color: var(--pine-dark); font-size: 0.98rem;">Photo en direct (Optionnelle)</strong>
+      </div>
+      <span class="chip" style="background: var(--pine); color: white; font-size: 0.72rem; padding: 3px 8px; font-weight: 700;">CAMÉRA EN DIRECT UNIQUEMENT</span>
+    </div>
+
+    <p style="font-size: 0.83rem; line-height: 1.45; color: var(--ink-secondary); margin-bottom: 12px;">
+      <strong>⚠️ Verrouillage anti-fraude strict :</strong> L'importation de fichiers depuis un ordinateur ou la galerie d'un téléphone est <strong>totalement désactivée</strong>. Seule la prise de vue en direct à l'instant même via la caméra est autorisée.
+    </p>
+
+    <!-- 1. État initial : Déclenchement de la caméra -->
+    <div id="camera-initial-state" style="text-align: center; padding: 10px 0;">
+      <button type="button" class="btn btn-primary" onclick="openLiveCamera()" style="width: 100%; max-width: 340px; box-shadow: 0 4px 12px rgba(26, 60, 42, 0.25);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+        <span>Activer la caméra en direct</span>
+      </button>
+    </div>
+
+    <!-- 2. État flux vidéo en direct (Direct Camera Stream) -->
+    <div id="camera-stream-container" class="hidden" style="position: relative; margin-top: 10px; border-radius: var(--radius-sm); overflow: hidden; background: #000;">
+      <video id="live-video-feed" playsinline autoplay muted style="width: 100%; max-height: 380px; object-fit: cover; display: block; border-radius: var(--radius-sm);"></video>
+      <div style="position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.7); color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; gap: 6px; backdrop-filter: blur(4px);">
+        <span class="pulse-dot" style="background-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);"></span>
+        <span>CAMÉRA EN DIRECT</span>
+      </div>
+      <div style="position: absolute; bottom: 14px; left: 0; right: 0; display: flex; justify-content: center; gap: 12px; padding: 0 16px;">
+        <button type="button" class="btn" onclick="takeLiveSnapshot()" style="background: #22C55E; color: #000; font-weight: 700; border-radius: 999px; padding: 12px 24px; box-shadow: 0 4px 14px rgba(0,0,0,0.5);">
+          ⚪ Capturer maintenant
+        </button>
+        <button type="button" class="btn" onclick="stopLiveCamera()" style="background: rgba(0,0,0,0.65); color: #fff; border-radius: 999px; padding: 12px 16px;">
+          Fermer la caméra
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. État photo capturée avec succès -->
+    <div id="camera-snapshot-preview" class="hidden" style="margin-top: 10px; text-align: center;">
+      <div style="position: relative; display: inline-block; max-width: 100%;">
+        <img id="snapshot-img-preview" src="" alt="Photo prise en direct" style="max-width: 100%; max-height: 320px; border-radius: var(--radius-sm); border: 2px solid var(--pine); display: block; margin: 0 auto; box-shadow: var(--shadow-md);">
+        <span style="position: absolute; bottom: 10px; right: 10px; background: rgba(15, 23, 42, 0.9); color: #22C55E; font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; backdrop-filter: blur(4px);">
+          ✓ Prise directe certifiée
+        </span>
+      </div>
+      <div style="margin-top: 12px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+        <button type="button" class="btn" onclick="retakeLivePhoto()" style="background: var(--surface); border: 1px solid var(--line); color: var(--ink);">
+          🔄 Reprendre la photo
+        </button>
+        <button type="button" class="btn danger" onclick="removeLivePhoto()">
+          ✕ Supprimer la photo
+        </button>
+      </div>
+    </div>
+
+    <!-- 4. Information si caméra absente ou bloquée -->
+    <div id="camera-error-message" class="hidden" style="margin-top: 12px; padding: 12px 14px; background: var(--surface); border: 1.5px solid var(--crimson); border-radius: var(--radius-sm); font-size: 0.86rem; color: var(--ink);">
+      <p style="margin: 0; font-weight: 700; color: var(--crimson);">Caméra indisponible ou autorisation refusée</p>
+      <p style="margin: 6px 0 0; font-size: 0.82rem; color: var(--muted); line-height: 1.4;">
+        Pour garantir l'intégrité de la plateforme, <strong>l'insertion de fichiers depuis le disque dur ou la galerie est strictement impossible</strong>. Veuillez autoriser l'accès à la caméra de votre appareil ou envoyer le signalement sans photo.
+      </p>
+    </div>
+
+    <!-- Canvas interne invisible pour l'horodatage indélébile de la prise directe -->
+    <canvas id="hidden-capture-canvas" style="display: none;"></canvas>
+    <input type="hidden" name="photo_captured_at" id="photo_captured_at">
+  </div>
+
+  <button type="submit" class="btn btn-primary" style="width: 100%; font-size: 1rem; padding: 14px 20px;">
+    Envoyer mon signalement
+  </button>
+  <p id="report-message" style="margin-top: 12px; font-weight: 600; text-align: center;"></p>
 </form>
 <%- include('partials/footer') %>

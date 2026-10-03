@@ -9,16 +9,42 @@
   </section>
   <section class="card">
     <h2>Situation récente</h2>
-    <b><%= statusLabels[state.status] || 'Pas d’information récente' %></b>
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
+      <b style="font-size: 1.1rem; color: var(--pine-dark);"><%= statusLabels[state.status] || 'Pas d’information récente' %></b>
+      <% if (state.fuel_type === 'essence') { %>
+        <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-weight: 700; font-size: 0.8rem;">⛽ Juste Essence dispo</span>
+      <% } else if (state.fuel_type === 'mazout') { %>
+        <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-weight: 700; font-size: 0.8rem;">🛢️ Juste Mazout dispo</span>
+      <% } else if (state.fuel_type === 'both') { %>
+        <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-weight: 700; font-size: 0.8rem;">⛽🛢️ Essence & Mazout dispos</span>
+      <% } %>
+    </div>
     <p>File : <%= state.queue %> · <%= state.freshness %></p>
     <p>Confirmations : <%= state.confirmations %> · Contradictions : <%= state.contradictions %></p>
   </section>
   <% for (const r of reports) { %>
     <article class="card">
-      <b><%= r.fuel_status %></b> · file <%= r.queue_status %>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+        <div>
+          <b><%= statusLabels[r.fuel_status] || r.fuel_status %></b> · file <%= r.queue_status %>
+        </div>
+        <% if (r.fuel_type === 'essence') { %>
+          <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-size: 0.75rem; font-weight: 700;">⛽ Juste Essence</span>
+        <% } else if (r.fuel_type === 'mazout') { %>
+          <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-size: 0.75rem; font-weight: 700;">🛢️ Juste Mazout</span>
+        <% } else if (r.fuel_type === 'both') { %>
+          <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-size: 0.75rem; font-weight: 700;">⛽🛢️ Essence & Mazout</span>
+        <% } %>
+      </div>
       <p><%= r.comment || '' %></p>
       <% if (r.photo_path) { %>
-        <p><img src="<%= r.photo_path %>" alt="Photo" style="max-width: 100%; border-radius: 8px; margin-top: 8px;"></p>
+        <div style="margin-top: 10px;">
+          <img src="<%= r.photo_path %>" alt="Photo prise en direct à la station" style="max-width: 100%; border-radius: var(--radius-sm); border: 1.5px solid var(--pine-border); display: block;">
+          <span style="display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.76rem; font-weight: 700; color: var(--emerald-600); background: var(--emerald-100); padding: 3px 10px; border-radius: var(--radius-full);">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Photo prise en direct sur place
+          </span>
+        </div>
       <% } %>
       <div class="actions">
         <button onclick="verifyReport(<%= r.id %>, 'confirm')">Confirmer</button>

@@ -100,18 +100,39 @@ const users = [
 ];
 
 const initialStations = [
-  { id: 1, name: 'Cobil Mutanga', brand: 'Cobil', zone: 'Mutanga', location_text: 'Mutanga, Bujumbura', landmark: 'quartier Mutanga', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 2, name: 'Cobil Kigobe', brand: 'Cobil', zone: 'Kigobe', location_text: 'Kigobe, Bujumbura', landmark: 'quartier Kigobe', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 3, name: 'Cobil Kamenge', brand: 'Cobil', zone: 'Kamenge', location_text: 'Kamenge, Bujumbura', landmark: 'quartier Kamenge', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 4, name: 'Kobil Buyenzi', brand: 'Kobil', zone: 'Buyenzi', location_text: 'Buyenzi, Bujumbura', landmark: 'quartier Buyenzi', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 5, name: 'Kobil Rohero', brand: 'Kobil', zone: 'Rohero', location_text: 'Rohero, Bujumbura', landmark: 'quartier Rohero', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 6, name: 'Engen Kinindo', brand: 'Engen', zone: 'Kinindo', location_text: 'Kinindo, Bujumbura', landmark: 'quartier Kinindo', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 7, name: 'Engen Gihosha', brand: 'Engen', zone: 'Gihosha', location_text: 'Gihosha, Bujumbura', landmark: 'quartier Gihosha', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 8, name: 'Station Mutanga', brand: null, zone: 'Mutanga', location_text: 'Mutanga, Bujumbura', landmark: 'quartier Mutanga', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 9, name: 'Station Rohero', brand: null, zone: 'Rohero', location_text: 'Rohero, Bujumbura', landmark: 'quartier Rohero', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 10, name: 'Station Kinindo', brand: null, zone: 'Kinindo', location_text: 'Kinindo, Bujumbura', landmark: 'quartier Kinindo', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 11, name: 'Station Buyenzi', brand: null, zone: 'Buyenzi', location_text: 'Buyenzi, Bujumbura', landmark: 'quartier Buyenzi', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
-  { id: 12, name: 'Station Gihosha', brand: null, zone: 'Gihosha', location_text: 'Gihosha, Bujumbura', landmark: 'quartier Gihosha', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() }
+  // Mukaza
+  { id: 1, name: 'Kimoil Fuel Stop', brand: 'Kimoil', zone: 'Centre-Ville', commune: 'Mukaza', location_text: 'Boulevard de l\'Uprona, Centre-Ville', landmark: 'Boulevard de l\'Uprona', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 2, name: 'InterPetrol Brasserie', brand: 'InterPetrol', zone: 'Ngagara', commune: 'Mukaza', location_text: 'Mukaza, Bujumbura', landmark: 'Près de l\'hôpital CENTRE DE SOINS BRARUDI', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 3, name: 'STATION VIP', brand: 'VIP', zone: 'Rohero', commune: 'Mukaza', location_text: 'Rohero, Mukaza', landmark: 'Près de Regideso Dir. Commerciale', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 4, name: 'Station King Star', brand: 'King Star', zone: 'Rohero', commune: 'Mukaza', location_text: 'Avenue de la JRR, Rohero', landmark: 'Avenue de la JRR', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 5, name: 'InterPetrol Musée Vivant', brand: 'InterPetrol', zone: 'Rohero', commune: 'Mukaza', location_text: 'Rohero, Mukaza', landmark: 'Près du Musée Vivant', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 6, name: 'InterPetrol Energy Marché Central', brand: 'InterPetrol', zone: 'Centre-Ville', commune: 'Mukaza', location_text: 'Centre-Ville, Mukaza', landmark: 'Près du Marché Central', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  
+  // Muha
+  { id: 7, name: 'Yakeime Oil Kinindo', brand: 'Yakeime', zone: 'Kinindo', commune: 'Muha', location_text: 'Kinindo, Muha', landmark: 'Avenue du Large', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 8, name: 'Delta Kibenga', brand: 'Delta', zone: 'Kibenga', commune: 'Muha', location_text: 'Kibenga, Muha', landmark: 'Route Nationale 3', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 9, name: 'InterPetrol Kibenga', brand: 'InterPetrol', zone: 'Kibenga', commune: 'Muha', location_text: 'Kibenga, Muha', landmark: 'RN3 près du pont Kanyosha', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 10, name: 'Station Safari City Kanyosha', brand: 'Safari City', zone: 'Kanyosha', commune: 'Muha', location_text: 'Kanyosha, Muha', landmark: 'Avenue Gisyo', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 11, name: 'Mogas Ex-King Star Kanyosha', brand: 'Mogas', zone: 'Kanyosha', commune: 'Muha', location_text: 'Kanyosha, Muha', landmark: 'RN3 Kanyosha', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 12, name: 'InterPetrol Energy Kanyosha', brand: 'InterPetrol', zone: 'Kanyosha', commune: 'Muha', location_text: 'Kanyosha, Muha', landmark: 'Près du marché de Kanyosha', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 13, name: 'Mezzo Oil Kanyosha', brand: 'Mezzo Oil', zone: 'Kanyosha', commune: 'Muha', location_text: 'Kanyosha, Muha', landmark: 'Avenue de la paix Kanyosha', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 14, name: 'Kobil Kizingwe', brand: 'Kobil', zone: 'Kizingwe', commune: 'Muha', location_text: 'Kizingwe, Muha', landmark: 'Avenue Kizingwe', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 15, name: 'Safali Oil Kizingwe', brand: 'Safali Oil', zone: 'Kizingwe', commune: 'Muha', location_text: 'Kizingwe, Muha', landmark: 'Près de l\'école fondamentale de Kizingwe', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 16, name: 'Station Noe Ruziba', brand: 'Noe', zone: 'Ruziba', commune: 'Muha', location_text: 'Ruziba, Muha', landmark: 'RN3 axe Bujumbura-Rumonge', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 17, name: 'Geprotis Ruziba', brand: 'Geprotis', zone: 'Ruziba', commune: 'Muha', location_text: 'Ruziba Rural, Muha', landmark: 'Ruziba Rural', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 18, name: 'Mega Oil Ruziba', brand: 'Mega Oil', zone: 'Ruziba', commune: 'Muha', location_text: 'Ruziba, Muha', landmark: 'Près du poste de police de Ruziba', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 19, name: 'Station Gare du Sud', brand: 'Gare du Sud', zone: 'Gare du Sud', commune: 'Muha', location_text: 'Gare du Sud, Muha', landmark: 'Terminus des bus Gare du Sud', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 20, name: 'Mogas Aupare', brand: 'Mogas', zone: 'Aupare', commune: 'Muha', location_text: 'Aupare, Muha', landmark: 'Quartier Aupare', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 21, name: 'Station Quick Service Musaga', brand: 'Quick Service', zone: 'Musaga', commune: 'Muha', location_text: 'Musaga, Muha', landmark: 'Boulevard de la Liberté', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 22, name: 'InterPetrol Energy Musaga', brand: 'InterPetrol', zone: 'Musaga', commune: 'Muha', location_text: 'Musaga, Muha', landmark: 'Avenue du Large vers Musaga', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 23, name: 'Lybajas Musaga', brand: 'Lybajas', zone: 'Musaga', commune: 'Muha', location_text: 'Musaga, Muha', landmark: 'Avenue Kiriri', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 24, name: 'Safari Oil Musaga', brand: 'Safari Oil', zone: 'Musaga', commune: 'Muha', location_text: 'Musaga, Muha', landmark: 'Entrée Musaga', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 25, name: 'Petro Muha de Musaga', brand: 'Petro Muha', zone: 'Musaga', commune: 'Muha', location_text: 'Musaga, Muha', landmark: 'Rond-point Musaga', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+
+  // Ntahangwa
+  { id: 26, name: 'Kigobe City Oil', brand: 'City Oil', zone: 'Kigobe', commune: 'Ntahangwa', location_text: 'Kigobe, Ntahangwa', landmark: 'Boulevard du 28 Novembre', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 27, name: 'InterPetrol Cibitoke', brand: 'InterPetrol', zone: 'Cibitoke', commune: 'Ntahangwa', location_text: 'Cibitoke, Ntahangwa', landmark: 'Boulevard du 28 Novembre angle 10ème', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() },
+  { id: 28, name: 'Kobil Kanyaru', brand: 'Kobil', zone: 'Kanyaru', commune: 'Ntahangwa', location_text: 'Kanyaru, Ntahangwa', landmark: 'RN1 sortie nord', fuels: 'Essence,Diesel', is_active: true, created_at: new Date().toISOString() }
 ];
 const stations = [...initialStations];
 
@@ -159,6 +180,13 @@ const statusLabels = {
   unknown: 'Pas d’information récente'
 };
 
+const fuelTypeLabels = {
+  essence: 'Essence',
+  mazout: 'Mazout',
+  both: 'Essence & Mazout',
+  unspecified: 'Non précisé'
+};
+
 // Aggregator
 function freshness(dateStr) {
   const dt = new Date(dateStr);
@@ -179,6 +207,7 @@ function aggregate(station) {
   if (activeReports.length === 0) {
     return {
       status: 'unknown',
+      fuel_type: 'unspecified',
       queue: 'unknown',
       freshness: 'Aucun signalement récent',
       report: null,
@@ -194,6 +223,7 @@ function aggregate(station) {
 
   return {
     status: latest.fuel_status,
+    fuel_type: latest.fuel_type || 'unspecified',
     queue: latest.queue_status,
     freshness: freshness(latest.created_at),
     report: latest,
@@ -239,7 +269,8 @@ app.get('/', (req, res) => {
   res.render('home', {
     ...ctx(req),
     stations: list,
-    statusLabels
+    statusLabels,
+    fuelTypeLabels
   });
 });
 
@@ -256,7 +287,8 @@ app.get('/stations/:id', (req, res) => {
     station: s || null,
     state: s ? aggregate(s) : null,
     reports: stationReports,
-    statusLabels
+    statusLabels,
+    fuelTypeLabels
   });
 });
 
@@ -408,22 +440,45 @@ app.post('/api/reports', upload.single('photo'), (req, res) => {
   }
 
   const fuel_status = req.body.fuel_status;
+  const fuel_type = req.body.fuel_type || 'unspecified';
   const queue_status = req.body.queue_status;
   const approximate_count = req.body.approximate_count || 'unknown';
   const station_open = req.body.station_open || 'unknown';
   const comment = (req.body.comment || '').trim() || null;
-  const photo_path = req.file ? `/static/uploads/${req.file.filename}` : null;
+  
+  let photo_path = null;
+  let is_live_capture = false;
+  if (req.file) {
+    const capturedAtRaw = req.body.photo_captured_at;
+    const capturedAt = capturedAtRaw ? parseInt(capturedAtRaw, 10) : null;
+    const now = Date.now();
+
+    // Règle anti-fraude stricte : la photo doit avoir été prise à l'instant même via la caméra
+    if (!capturedAt || Math.abs(now - capturedAt) > 5 * 60 * 1000) {
+      try {
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      } catch (err) {}
+      return res.status(400).json({ 
+        detail: "Photo refusée : Aucune photo de galerie ou disque dur n'est acceptée. La photo doit être prise directement sur le moment avec la caméra." 
+      });
+    }
+
+    photo_path = `/static/uploads/${req.file.filename}`;
+    is_live_capture = true;
+  }
 
   const report = {
     id: nextReportId++,
     station_id: stationId,
     user_id: user.id,
     fuel_status,
+    fuel_type,
     queue_status,
     approximate_count,
     station_open,
     comment,
     photo_path,
+    is_live_capture,
     created_at: new Date().toISOString(),
     is_deleted: false
   };

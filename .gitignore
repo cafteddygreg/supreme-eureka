@@ -1,6 +1,8 @@
-__pycache__/ 
-*.pyc 
-*.db 
-.env 
-app/static/uploads/ 
-.pytest_cache/ 
+__pycache__/
+*.pyc
+*.db
+.env
+.env.local
+.env.production
+app/static/uploads/
+.pytest_cache/

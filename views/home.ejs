@@ -1,20 +1,143 @@
-<%- include('partials/header', { title: 'Igitoro Live' }) %>
+<%- include('partials/header', { title: 'Igitoro Live - Stations-service Bujumbura' }) %>
 <section class="hero">
-  <small>BUJUMBURA · INFORMATIONS RÉCENTES</small>
+  <small>BUJUMBURA · INFORMATIONS EN TEMPS RÉEL</small>
   <h1>Où trouver du carburant ?</h1>
-  <p>Consultez les derniers signalements avant de vous déplacer.</p>
-  <input class="search" placeholder="Station ou quartier…" oninput="handleSearch(this.value)">
+  <p>Consultez les derniers signalements communautaires avant de vous déplacer.</p>
+  
+  <div style="position: relative; margin-top: 14px;">
+    <input 
+      type="search" 
+      id="stationSearchInput" 
+      class="search" 
+      placeholder="Rechercher par nom, marque ou quartier (ex: Kobil, InterPetrol, Kinindo)..." 
+      oninput="handleSearch(this.value)"
+      autocomplete="off"
+      aria-label="Rechercher par nom, marque ou commune"
+    >
+    <button 
+      id="searchClearBtn" 
+      type="button" 
+      onclick="clearSearch()" 
+      class="hidden" 
+      aria-label="Effacer la recherche" 
+      style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); background: transparent; border: none; font-size: 1.1rem; color: var(--muted); cursor: pointer; padding: 4px 8px; line-height: 1;"
+    >✕</button>
+  </div>
+
+  <% 
+    const mukazaCount = stations.filter(x => (x.station.commune || '').toLowerCase() === 'mukaza').length;
+    const muhaCount = stations.filter(x => (x.station.commune || '').toLowerCase() === 'muha').length;
+    const ntahangwaCount = stations.filter(x => (x.station.commune || '').toLowerCase() === 'ntahangwa').length;
+  %>
+
+  <div class="filter-chips-container" style="margin-top: 14px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+      <span style="font-size: 0.82rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Filtrer par commune</span>
+      <button 
+        type="button" 
+        id="resetCommunesBtn"
+        onclick="resetCommuneFilter()" 
+        style="background: transparent; border: none; font-size: 0.78rem; color: var(--pine); cursor: pointer; font-weight: 600; padding: 2px 4px;"
+      >Réinitialiser</button>
+    </div>
+    <div class="chips commune-chips" style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button 
+        type="button" 
+        class="chip filter-chip selected" 
+        data-commune="" 
+        onclick="toggleCommuneFilter('')"
+        aria-pressed="true"
+        style="cursor: pointer; display: inline-flex; align-items: center;"
+      >
+        <span>Toutes</span>
+        <span class="chip-count" style="margin-left: 6px; padding: 2px 7px; border-radius: 999px; font-size: 0.72rem; background: rgba(255,255,255,0.25);"><%= stations.length %></span>
+      </button>
+      <button 
+        type="button" 
+        class="chip filter-chip" 
+        data-commune="Mukaza" 
+        onclick="toggleCommuneFilter('Mukaza')"
+        aria-pressed="false"
+        style="cursor: pointer; display: inline-flex; align-items: center;"
+      >
+        <span>Mukaza</span>
+        <span class="chip-count" style="margin-left: 6px; padding: 2px 7px; border-radius: 999px; font-size: 0.72rem; background: var(--pine-soft); color: var(--pine);"><%= mukazaCount %></span>
+      </button>
+      <button 
+        type="button" 
+        class="chip filter-chip" 
+        data-commune="Muha" 
+        onclick="toggleCommuneFilter('Muha')"
+        aria-pressed="false"
+        style="cursor: pointer; display: inline-flex; align-items: center;"
+      >
+        <span>Muha</span>
+        <span class="chip-count" style="margin-left: 6px; padding: 2px 7px; border-radius: 999px; font-size: 0.72rem; background: var(--pine-soft); color: var(--pine);"><%= muhaCount %></span>
+      </button>
+      <button 
+        type="button" 
+        class="chip filter-chip" 
+        data-commune="Ntahangwa" 
+        onclick="toggleCommuneFilter('Ntahangwa')"
+        aria-pressed="false"
+        style="cursor: pointer; display: inline-flex; align-items: center;"
+      >
+        <span>Ntahangwa</span>
+        <span class="chip-count" style="margin-left: 6px; padding: 2px 7px; border-radius: 999px; font-size: 0.72rem; background: var(--pine-soft); color: var(--pine);"><%= ntahangwaCount %></span>
+      </button>
+    </div>
+  </div>
+  
+  <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--muted);">
+    <span id="resultsCount"><strong><%= stations.length %></strong> stations répertoriées</span>
+    <span id="activeCommuneLabel" style="font-size: 0.8rem; font-weight: 600; color: var(--pine);"></span>
+  </div>
 </section>
-<div class="list">
+
+<div id="noResultsMessage" class="card hidden" style="text-align: center; padding: 32px 16px; margin: 16px 0;">
+  <p style="font-size: 1.1rem; font-weight: 700; color: var(--pine); margin-bottom: 6px;">Aucune station trouvée</p>
+  <p class="muted" style="font-size: 0.9rem; margin-bottom: 14px;">Aucune station ne correspond à votre sélection de commune ou recherche.</p>
+  <button type="button" class="btn btn-primary" onclick="clearSearch()">Afficher toutes les stations</button>
+</div>
+
+<div class="list" id="stationsList">
   <% for (const x of stations) { %>
-    <article class="card station-card" data-search="<%= x.station.name %> <%= x.station.zone %> <%= x.station.brand || '' %>">
+    <article 
+      class="card station-card" 
+      data-id="<%= x.station.id %>"
+      data-name="<%= (x.station.name || '').toLowerCase() %>" 
+      data-brand="<%= (x.station.brand || '').toLowerCase() %>" 
+      data-commune="<%= (x.station.commune || '').toLowerCase() %>" 
+      data-zone="<%= (x.station.zone || '').toLowerCase() %>" 
+      data-search="<%= `${x.station.name || ''} ${x.station.brand || ''} ${x.station.commune || ''} ${x.station.zone || ''} ${x.station.landmark || ''} ${x.station.location_text || ''}`.toLowerCase() %>"
+    >
       <div>
-        <span class="chip"><%= x.station.zone %></span>
+        <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+          <% if (x.station.commune) { %>
+            <span class="chip" style="background: var(--pine); color: white; font-size: 0.75rem; padding: 4px 8px;"><%= x.station.commune %></span>
+          <% } %>
+          <span class="chip"><%= x.station.zone %></span>
+          <% if (x.station.brand) { %>
+            <span class="chip" style="background: var(--amber-soft); color: var(--amber); font-weight: 600;"><%= x.station.brand %></span>
+          <% } %>
+        </div>
         <h2><a href="/stations/<%= x.station.id %>"><%= x.station.name %></a></h2>
         <p><%= x.station.location_text %></p>
+        <% if (x.station.landmark) { %>
+          <small style="color: var(--muted); display: block; margin-top: 4px;"><%= x.station.landmark %></small>
+        <% } %>
       </div>
       <div class="state">
-        <b><%= statusLabels[x.state.status] || 'Pas d’information récente' %></b>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;">
+          <b><%= statusLabels[x.state.status] || 'Pas d’information récente' %></b>
+          <% if (x.state.fuel_type === 'essence') { %>
+            <span class="chip" style="background: var(--amber-soft); color: var(--amber-dark); font-size: 0.72rem; padding: 2px 7px; font-weight: 700;">⛽ Juste Essence</span>
+          <% } else if (x.state.fuel_type === 'mazout') { %>
+            <span class="chip" style="background: var(--pine-soft); color: var(--pine); font-size: 0.72rem; padding: 2px 7px; font-weight: 700;">🛢️ Juste Mazout</span>
+          <% } else if (x.state.fuel_type === 'both') { %>
+            <span class="chip" style="background: var(--emerald-100); color: var(--emerald-600); font-size: 0.72rem; padding: 2px 7px; font-weight: 700;">⛽🛢️ Essence & Mazout</span>
+          <% } %>
+        </div>
         <small><%= x.state.queue %> · <%= x.state.freshness %></small>
       </div>
     </article>

@@ -2,19 +2,42 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title><%= typeof title !== 'undefined' && title ? title : 'Igitoro Live' %></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title><%= typeof title !== 'undefined' && title ? title : 'Igitoro Live - Carburant Bujumbura' %></title>
+  <meta name="description" content="Plateforme communautaire en temps réel pour suivre la disponibilité de l'essence et du mazout dans les stations-service de Bujumbura.">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+  <meta name="theme-color" content="#1A3C2A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Igitoro">
   <link rel="stylesheet" href="/static/css/app.css">
   <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
 </head>
 <body>
-  <header>
-    <a class="brand" href="/">Igitoro <b>Live</b></a>
-    <nav>
-      <a href="/">Stations</a>
-      <a href="/signaler">Signaler</a>
-      <a href="/notifications">Alertes</a>
-      <a href="/profil">Profil</a>
-    </nav>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand-wrapper">
+        <a class="brand" href="/" aria-label="Accueil Igitoro Live">
+          <span class="brand-icon">⛽</span>
+          <span>Igitoro <b>Live</b></span>
+        </a>
+        <span class="live-indicator" title="Service actif en direct à Bujumbura">
+          <span class="pulse-dot"></span>
+          <span class="live-text">Bujumbura</span>
+        </span>
+      </div>
+
+      <nav class="desktop-nav" aria-label="Navigation principale">
+        <a href="/" class="nav-link">Stations</a>
+        <a href="/notifications" class="nav-link">Alertes</a>
+        <a href="/profil" class="nav-link">Profil</a>
+        <a href="/signaler" class="nav-btn-cta">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>Signaler</span>
+        </a>
+      </nav>
+    </div>
   </header>
-  <main>
+  <main class="app-main">

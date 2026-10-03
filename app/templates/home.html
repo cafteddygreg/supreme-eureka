@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Igitoro Live{% endblock %}
+{% block content %}
+<section class="hero">
+  <small>BUJUMBURA · INFORMATIONS EN TEMPS RÉEL</small>
+  <h1>Où trouver du carburant ?</h1>
+  <p>Consultez les derniers signalements avant de vous déplacer.</p>
+  
+  <div style="position: relative; margin-top: 14px;">
+    <input 
+      id="stationSearchInput" 
+      class="search" 
+      placeholder="Rechercher par nom, marque ou commune (ex: Kobil, Mukaza, InterPetrol)..." 
+      oninput="handleSearch(this.value)"
+      autocomplete="off"
+    >
+    <button 
+      id="searchClearBtn" 
+      type="button" 
+      onclick="clearSearch()" 
+      class="hidden" 
+      style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); background: transparent; border: none; font-size: 1.1rem; color: var(--muted); cursor: pointer;"
+    >✕</button>
+  </div>
+
+  <div class="chips commune-filters" style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <button type="button" class="chip selected filter-commune-btn" onclick="filterByCommune('')">Toutes</button>
+    <button type="button" class="chip filter-commune-btn" onclick="filterByCommune('Mukaza')">Mukaza</button>
+    <button type="button" class="chip filter-commune-btn" onclick="filterByCommune('Muha')">Muha</button>
+    <button type="button" class="chip filter-commune-btn" onclick="filterByCommune('Ntahangwa')">Ntahangwa</button>
+  </div>
+</section>
+
+{% if not is_authenticated and client_id %}
+<div class="card" style="text-align: center; padding: 20px;">
+    <p class="muted small" style="margin-bottom: 12px;">Connectez-vous pour signaler plus facilement.</p>
+    <div id="g_id_onload"
+         data-client_id="{{ client_id }}"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
+    </div>
+    <div class="g_id_signin"
+         data-type="standard"
+         data-size="large"
+         data-theme="outline"
+         data-text="continue_with"
+         data-shape="rectangular"
+         data-logo_alignment="left"
+         style="display: flex; justify-content: center;">
+    </div>
+</div>
+{% endif %}
+
+<div class="list" id="stationsList">
+  {% for x in stations %}
+    <article 
+      class="card station-card" 
+      data-id="{{ x.station.id }}"
+      data-name="{{ x.station.name|lower }}" 
+      data-brand="{{ (x.station.brand or '')|lower }}" 
+      data-commune="{{ (x.station.commune or '')|lower }}" 
+      data-zone="{{ (x.station.zone or '')|lower }}" 
+      data-search="{{ x.station.name|lower }} {{ (x.station.brand or '')|lower }} {{ (x.station.commune or '')|lower }} {{ (x.station.zone or '')|lower }}"
+    >
+      <div>
+        <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 6px;">
+          {% if x.station.commune %}
+            <span class="chip" style="background: var(--pine); color: white; font-size: 0.75rem;">{{ x.station.commune }}</span>
+          {% endif %}
+          <span class="chip">{{ x.station.zone }}</span>
+          {% if x.station.brand %}
+            <span class="chip" style="background: var(--amber-soft); color: var(--amber);">{{ x.station.brand }}</span>
+          {% endif %}
+        </div>
+        <h2><a href="/stations/{{ x.station.id }}">{{ x.station.name }}</a></h2>
+        <p>{{ x.station.location_text }}</p>
+      </div>
+      <div class="state">
+        <b>{{ {'distribution':'On distribue','no_fuel':'Pas de carburant','starting':'Ça semble commencer','unknown':'Pas d’information récente'}[x.state.status] }}</b>
+        <small>{{ x.state.queue }} · {{ x.state.freshness }}</small>
+      </div>
+    </article>
+  {% endfor %}
+</div>
+{% endblock %}
