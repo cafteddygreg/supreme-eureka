@@ -1,0 +1,29 @@
+<%- include('partials/header', { title: 'Profil' }) %>
+<h1>Mon profil</h1>
+<% if (user) { %>
+  <section class="card">
+    <h2><%= user.name %></h2>
+    <p>Compte Google<% if (user.email) { %> · <%= user.email %><% } %></p>
+    <button onclick="logout()">Déconnexion</button>
+    <button class="danger" onclick="deleteAccount()">Supprimer mon compte</button>
+  </section>
+  <h2>Quartiers suivis</h2>
+  <div class="chips">
+    <% for (const s of subscriptions) { %>
+      <span class="chip selected"><%= s.zone %></span>
+    <% } %>
+  </div>
+  <h2>Mes signalements</h2>
+  <% for (const r of reports) { %>
+    <article class="card">
+      <%= r.station ? r.station.name : 'Station' %> · <%= r.fuel_status %>
+      <button onclick="deleteReport(<%= r.id %>)">Supprimer</button>
+    </article>
+  <% } %>
+<% } else { %>
+  <section class="card">
+    <p>Connectez-vous avec Google pour participer.</p>
+    <button class="button" onclick="googleMockLogin()">Google Sign-In</button>
+  </section>
+<% } %>
+<%- include('partials/footer') %>

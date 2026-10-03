@@ -1,0 +1,40 @@
+<%- include('partials/header', { title: 'Signaler' }) %>
+<h1>Nouveau signalement</h1>
+<form id="report-form" class="card" enctype="multipart/form-data" onsubmit="submitReport(event)">
+  <label>Station
+    <select name="station_id" required>
+      <option value="">Choisir</option>
+      <% for (const s of stations) { %>
+        <option value="<%= s.id %>"><%= s.name %> — <%= s.zone %></option>
+      <% } %>
+    </select>
+  </label>
+  <label><input type="checkbox" id="new-station-toggle" onchange="toggleNewStation()"> Je ne trouve pas ma station</label>
+  <div id="new-station-fields" class="hidden">
+    <input id="new-station-name" placeholder="Nom">
+    <input id="new-station-brand" placeholder="Marque">
+    <input id="new-station-zone" placeholder="Quartier">
+    <input id="new-station-location" placeholder="Localisation / repère">
+    <button type="button" onclick="createAndSelectStation()">Inscrire cette station</button>
+  </div>
+  <fieldset>
+    <legend>Carburant</legend>
+    <label><input type="radio" name="fuel_status" value="distribution" required> On distribue</label>
+    <label><input type="radio" name="fuel_status" value="no_fuel" required> Pas de carburant</label>
+    <label><input type="radio" name="fuel_status" value="starting" required> Ça semble commencer</label>
+    <label><input type="radio" name="fuel_status" value="unknown" required> Je ne sais pas</label>
+  </fieldset>
+  <fieldset>
+    <legend>File</legend>
+    <label><input type="radio" name="queue_status" value="none" required> Pas de file</label>
+    <label><input type="radio" name="queue_status" value="short" required> Courte</label>
+    <label><input type="radio" name="queue_status" value="medium" required> Moyenne</label>
+    <label><input type="radio" name="queue_status" value="long" required> Longue</label>
+    <label><input type="radio" name="queue_status" value="unknown" required> Je ne sais pas</label>
+  </fieldset>
+  <textarea name="comment" maxlength="1000" placeholder="Commentaire"></textarea>
+  <input id="photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" capture="environment">
+  <button class="button">Envoyer</button>
+  <p id="report-message"></p>
+</form>
+<%- include('partials/footer') %>

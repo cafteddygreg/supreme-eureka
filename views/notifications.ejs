@@ -1,0 +1,19 @@
+<%- include('partials/header', { title: 'Alertes' }) %>
+<h1>Alertes par quartier</h1>
+<div class="card">Les alertes utilisent les nouveaux signalements. Igitoro Live ne suit pas votre position.</div>
+<h2>Événements récents</h2>
+<% for (const r of recent) { %>
+  <article class="card">
+    <%= r.station ? r.station.name : 'Station' %> · <%= r.station ? r.station.zone : '' %>
+    <small><%= r.created_at %></small>
+  </article>
+<% } %>
+<h2>Quartiers suivis</h2>
+<div class="chips">
+  <% for (const z of zones) { %>
+    <button class="chip <%= subscribed.has(z) ? 'selected' : '' %>" onclick="toggleZone(this, '<%= z %>')">
+      <%= z %> <%= subscribed.has(z) ? '✓' : '+' %>
+    </button>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

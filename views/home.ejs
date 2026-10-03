@@ -1,0 +1,23 @@
+<%- include('partials/header', { title: 'Igitoro Live' }) %>
+<section class="hero">
+  <small>BUJUMBURA · INFORMATIONS RÉCENTES</small>
+  <h1>Où trouver du carburant ?</h1>
+  <p>Consultez les derniers signalements avant de vous déplacer.</p>
+  <input class="search" placeholder="Station ou quartier…" oninput="handleSearch(this.value)">
+</section>
+<div class="list">
+  <% for (const x of stations) { %>
+    <article class="card station-card" data-search="<%= x.station.name %> <%= x.station.zone %> <%= x.station.brand || '' %>">
+      <div>
+        <span class="chip"><%= x.station.zone %></span>
+        <h2><a href="/stations/<%= x.station.id %>"><%= x.station.name %></a></h2>
+        <p><%= x.station.location_text %></p>
+      </div>
+      <div class="state">
+        <b><%= statusLabels[x.state.status] || 'Pas d’information récente' %></b>
+        <small><%= x.state.queue %> · <%= x.state.freshness %></small>
+      </div>
+    </article>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

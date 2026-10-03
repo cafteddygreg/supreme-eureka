@@ -1,0 +1,19 @@
+{
+  "name": "igitoro-live",
+  "version": "1.0.0",
+  "description": "Plateforme communautaire de suivi de la disponibilité du carburant dans les stations-service à Bujumbura",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "node -e \"console.log('Build complete')\""
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^1.4.5-lts.1"
+  }
+}
