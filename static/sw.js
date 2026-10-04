@@ -1,9 +1,5 @@
-const CACHE_NAME = 'igitoro-fast-v3';
+const CACHE_NAME = 'igitoro-clean-v5';
 const STATIC_ASSETS = [
-  '/',
-  '/signaler',
-  '/partager',
-  '/notifications',
   '/static/css/app.css?v=3',
   '/static/css/app.css',
   '/static/css/share.css',
@@ -31,11 +27,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      if (self.registration.navigationPreload) {
-        try {
-          await self.registration.navigationPreload.enable();
-        } catch (_) {}
-      }
+      // Purge intégrale de tous les anciens caches (notamment igitoro-fast-v3)
       const keys = await caches.keys();
       await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
       await self.clients.claim();
@@ -45,10 +37,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Ne jamais intercepter les navigations de pages HTML pour garantir un affichage direct text/html
+  if (event.request.mode === 'navigate') return;
+
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  // 1. Assets statiques (CSS, JS, Icônes, Manifest) -> Cache-First + mise à jour en arrière-plan (< 5ms au démarrage)
+  // Cache-First uniquement pour les fichiers statiques (CSS, JS, Icônes, Manifest)
   if (
     (url.pathname.startsWith('/static/') && !url.pathname.startsWith('/static/uploads/')) ||
     url.pathname === '/manifest.json' ||
@@ -60,7 +55,8 @@ self.addEventListener('fetch', (event) => {
         const cached = await cache.match(event.request);
         const networkPromise = fetch(event.request)
           .then((res) => {
-            if (res && res.ok) {
+            const ct = (res && res.headers && res.headers.get('content-type')) || '';
+            if (res && res.ok && !ct.includes('octet-stream')) {
               cache.put(event.request, res.clone()).catch(() => {});
             }
             return res;
@@ -68,49 +64,6 @@ self.addEventListener('fetch', (event) => {
           .catch(() => cached);
         return cached || networkPromise;
       })
-    );
-    return;
-  }
-
-  // 2. Pages principales à l'ouverture depuis l'écran d'accueil -> Réseau rapide (850ms max) sinon affichage instantané du cache + rafraîchissement en arrière-plan
-  const isFastShellRoute =
-    event.request.mode === 'navigate' &&
-    (url.pathname === '/' ||
-      url.pathname === '/signaler' ||
-      url.pathname === '/partager' ||
-      url.pathname === '/share' ||
-      url.pathname === '/notifications');
-
-  if (isFastShellRoute) {
-    event.respondWith(
-      (async () => {
-        const cache = await caches.open(CACHE_NAME);
-        const cachedPage = await cache.match(url.pathname);
-
-        const fetchAndUpdate = (async () => {
-          const preloadRes = await event.preloadResponse;
-          if (preloadRes && preloadRes.ok) {
-            cache.put(url.pathname, preloadRes.clone()).catch(() => {});
-            return preloadRes;
-          }
-          const netRes = await fetch(event.request);
-          if (netRes && netRes.ok) {
-            cache.put(url.pathname, netRes.clone()).catch(() => {});
-          }
-          return netRes;
-        })();
-
-        if (!cachedPage) {
-          return fetchAndUpdate;
-        }
-
-        // Course entre le réseau (max 850ms) et le cache local instantané pour éviter tout écran blanc au lancement
-        const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve(cachedPage), 850)
-        );
-
-        return Promise.race([fetchAndUpdate.catch(() => cachedPage), timeoutPromise]);
-      })()
     );
   }
 });

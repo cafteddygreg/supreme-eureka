@@ -96,8 +96,13 @@
         if (a) prefetchUrl(a.getAttribute('href'));
       }, { passive: true, capture: true });
 
+      if ('caches' in window) {
+        caches.delete('igitoro-fast-v3').catch(() => {});
+      }
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        navigator.serviceWorker.register('/sw.js?v=5').then((reg) => {
+          reg.update().catch(() => {});
+        }).catch(() => {});
       }
     })();
   </script>

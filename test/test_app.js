@@ -64,9 +64,14 @@ async function runTests() {
   }
 
   // ================= 1. Routes web principales =================
-  await test('GET / répond avec HTTP 200 et contient le titre', async () => {
-    const res = await fetch(`${BASE_URL}/`);
+  await test('GET / répond avec HTTP 200, Content-Type text/html et contient le titre', async () => {
+    const res = await fetch(`${BASE_URL}/`, {
+      headers: { 'Accept-Encoding': 'gzip, deflate, br' }
+    });
     assert.strictEqual(res.status, 200);
+    const ct = res.headers.get('content-type') || '';
+    assert(ct.includes('text/html'), `Content-Type inattendu: ${ct}`);
+    assert(!ct.includes('octet-stream'), `Content-Type ne doit jamais être octet-stream: ${ct}`);
     const text = await res.text();
     assert(text.includes('Igitoro'));
     assert(text.includes('Mukaza'));

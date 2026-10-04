@@ -54,36 +54,6 @@ const upload = multer({
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Compression Gzip native pour accélérer l'ouverture sur réseau mobile (réduit la taille HTML/JSON de ~80%)
-app.use((req, res, next) => {
-  const acceptEncoding = req.headers['accept-encoding'] || '';
-  if (!acceptEncoding.includes('gzip') || req.path.startsWith('/static/icons/') || req.path.startsWith('/static/uploads/')) {
-    return next();
-  }
-  const origSend = res.send.bind(res);
-  res.send = function (body) {
-    if (res.headersSent) return origSend(body);
-    const contentType = String(res.getHeader('Content-Type') || '');
-    const isCompressible =
-      typeof body === 'string' ||
-      contentType.includes('text/') ||
-      contentType.includes('application/json') ||
-      contentType.includes('application/javascript');
-    const buf = Buffer.isBuffer(body) ? body : (typeof body === 'string' ? Buffer.from(body, 'utf8') : null);
-    if (isCompressible && buf && buf.length > 512) {
-      try {
-        const compressed = zlib.gzipSync(buf, { level: zlib.constants.Z_BEST_SPEED });
-        res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Vary', 'Accept-Encoding');
-        res.removeHeader('Content-Length');
-        return origSend(compressed);
-      } catch (_) {}
-    }
-    return origSend(body);
-  };
-  next();
-});
-
 app.use(
   '/static',
   express.static(path.join(__dirname, 'static'), {
@@ -792,6 +762,7 @@ app.get('/manifest.json', (req, res) => {
 });
 
 app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.type('application/javascript');
   res.sendFile(path.join(__dirname, 'static', 'sw.js'));
 });
