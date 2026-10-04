@@ -514,6 +514,14 @@ async function runTests() {
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.strictEqual(typeof data.active, 'boolean');
+
+    // Rétablir l'état actif de la station #2 (InterPetrol Brasserie)
+    if (!data.active) {
+      await fetch(`${BASE_URL}/api/admin/stations/2/toggle`, {
+        method: 'POST',
+        headers: { 'Cookie': adminCookie }
+      });
+    }
   });
 
   // ================= 7. Suppression de compte =================
@@ -744,6 +752,101 @@ async function runTests() {
       body: JSON.stringify({ event: 'share_opened', channel: 'whatsapp_chat' })
     });
     assert.strictEqual(evRes.status, 200);
+  });
+
+  // ================= 9. Bot Telegram Intelligent (Webhook, Fuzzy Matching, Inline Keyboards) =================
+  await test('POST /api/telegram/webhook : Fuzzy Matching ("interpetrol brarudi") et pré-validation sans écriture directe', async () => {
+    const res = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          chat: { id: 999001 },
+          text: 'interpetrol brarudi : essence et mazout dispo, file courte\nkobil kizingwe : juste essence disponible'
+        }
+      })
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.action, 'pending_validation');
+    assert(data.batch_id);
+    assert(Array.isArray(data.extracted_items) && data.extracted_items.length >= 2);
+
+    // Vérifier que "interpetrol brarudi" a bien été associé à "InterPetrol Brasserie"
+    const brarudiMatch = data.extracted_items.find(x => (x.matched_name || '').includes('InterPetrol Brasserie'));
+    assert(brarudiMatch, 'InterPetrol Brasserie doit être reconnue via Fuzzy Matching sur "interpetrol brarudi"');
+    assert(brarudiMatch.station_id > 0);
+
+    // Vérifier la présence des boutons Inline Keyboard [ ✅ Confirmer la mise à jour ] et [ ❌ Annuler ]
+    const buttons = data.reply_markup?.inline_keyboard?.[0] || [];
+    assert.strictEqual(buttons.length, 2);
+    assert(buttons[0].callback_data.startsWith('confirm_batch:'));
+    assert(buttons[1].callback_data.startsWith('cancel_batch:'));
+
+    // Confirmer le lot via callback_query -> écriture effective en base
+    const confirmRes = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query: {
+          id: 'cb-test-confirm',
+          data: `confirm_batch:${data.batch_id}`,
+          message: { chat: { id: 999001 }, message_id: 10 }
+        }
+      })
+    });
+    assert.strictEqual(confirmRes.status, 200);
+    const confirmData = await confirmRes.json();
+    assert.strictEqual(confirmData.ok, true);
+    assert.strictEqual(confirmData.action, 'confirmed');
+    assert(confirmData.inserted >= 2);
+  });
+
+  await test('POST /api/telegram/webhook : Annulation via Inline Keyboard (cancel_batch) et commande /stats', async () => {
+    const msgRes = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          chat: { id: 999001 },
+          text: 'delta kibenga : pompes à sec'
+        }
+      })
+    });
+    const msgData = await msgRes.json();
+    assert.strictEqual(msgData.action, 'pending_validation');
+
+    const cancelRes = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query: {
+          id: 'cb-test-cancel',
+          data: `cancel_batch:${msgData.batch_id}`,
+          message: { chat: { id: 999001 }, message_id: 11 }
+        }
+      })
+    });
+    const cancelData = await cancelRes.json();
+    assert.strictEqual(cancelData.ok, true);
+    assert.strictEqual(cancelData.action, 'cancelled');
+
+    // Tester la commande /stats
+    const statsRes = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          chat: { id: 999001 },
+          text: '/stats'
+        }
+      })
+    });
+    const statsData = await statsRes.json();
+    assert.strictEqual(statsData.ok, true);
+    assert.strictEqual(statsData.action, 'stats');
+    assert(statsData.message.includes('BILAN IGITORO LIVE'));
   });
 
   console.log(`\n========================================`);

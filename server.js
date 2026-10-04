@@ -8,7 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { OAuth2Client } from 'google-auth-library';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1633,6 +1633,644 @@ app.post('/api/admin/users/:id/toggle-suspend', requireAdmin, (req, res) => {
   u.is_suspended = !u.is_suspended;
   logAction(req, u.is_suspended ? 'Utilisateur suspendu' : 'Utilisateur rétabli', 'user', u.id, u.name);
   res.json({ ok: true, is_suspended: u.is_suspended });
+});
+
+// ================= BOT TELEGRAM INTELLIGENT (MONOLITHE / WEBHOOK / FUZZY MATCHING / INLINE KEYBOARD) =================
+const telegramPendingBatches = new Map();
+
+const BUJUMBURA_STATION_ALIASES = {
+  brarudi: 'brasserie',
+  brasserie: 'brasserie',
+  regideso: 'vip',
+  musee: 'musee vivant',
+  marche: 'marche central',
+  kingstar: 'king star',
+  inter: 'interpetrol',
+  interpetrole: 'interpetrol',
+  kigobe: 'kigobe city oil',
+  gare: 'gare du sud',
+  quick: 'quick service',
+  safali: 'safari',
+  yakeime: 'yakeime oil kinindo',
+  gasoil: 'mazout',
+  gazoil: 'mazout',
+  diesel: 'mazout'
+};
+
+const STATION_STOP_WORDS = new Set([
+  'station', 'service', 'bujumbura', 'burundi', 'chez', 'de', 'du', 'la', 'le', 'les', 'au', 'aux', 'pres', 'vers', 'quartier', 'commune'
+]);
+
+export function normalizeStationText(raw) {
+  if (!raw) return '';
+  const clean = String(raw)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ');
+  const tokens = [];
+  for (const tok of clean.split(/\s+/).filter(Boolean)) {
+    if (STATION_STOP_WORDS.has(tok)) continue;
+    const mapped = BUJUMBURA_STATION_ALIASES[tok] || tok;
+    tokens.push(...mapped.split(/\s+/));
+  }
+  return tokens.join(' ');
+}
+
+function diceBigramsSimilarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
+  const bigramsA = new Map();
+  for (let i = 0; i < a.length - 1; i++) {
+    const bg = a.slice(i, i + 2);
+    bigramsA.set(bg, (bigramsA.get(bg) || 0) + 1);
+  }
+  let intersection = 0;
+  for (let i = 0; i < b.length - 1; i++) {
+    const bg = b.slice(i, i + 2);
+    const count = bigramsA.get(bg) || 0;
+    if (count > 0) {
+      bigramsA.set(bg, count - 1);
+      intersection++;
+    }
+  }
+  return (2.0 * intersection) / (a.length - 1 + (b.length - 1));
+}
+
+export function matchStationFuzzy(extractedName, stationList = stations, threshold = 0.52) {
+  const queryNorm = normalizeStationText(extractedName);
+  if (!queryNorm) return { station: null, score: 0 };
+
+  const queryTokens = new Set(queryNorm.split(' ').filter(Boolean));
+  let bestStation = null;
+  let bestScore = 0;
+
+  for (const st of stationList) {
+    if (!st.is_active) continue;
+    const nameNorm = normalizeStationText(st.name || '');
+    const brandNorm = normalizeStationText(st.brand || '');
+    const zoneNorm = normalizeStationText(st.zone || '');
+    const landmarkNorm = normalizeStationText(`${st.landmark || ''} ${st.location_text || ''}`);
+
+    if (queryNorm === nameNorm) {
+      return { station: st, score: 1.0 };
+    }
+
+    const candMainTokens = new Set(`${nameNorm} ${zoneNorm}`.split(' ').filter(Boolean));
+    const candAllTokens = new Set(`${nameNorm} ${brandNorm} ${zoneNorm} ${landmarkNorm}`.split(' ').filter(Boolean));
+
+    let overlapMainCount = 0;
+    let overlapAllCount = 0;
+    for (const qt of queryTokens) {
+      if (candMainTokens.has(qt)) overlapMainCount++;
+      if (candAllTokens.has(qt)) overlapAllCount++;
+    }
+
+    const overlapMain = overlapMainCount / Math.max(queryTokens.size, 1);
+    const overlapAll = overlapAllCount / Math.max(queryTokens.size, 1);
+    const seqName = diceBigramsSimilarity(queryNorm, nameNorm);
+    const seqZone = diceBigramsSimilarity(queryNorm, `${brandNorm} ${zoneNorm}`.trim());
+
+    let score = Math.max(
+      seqName,
+      seqZone,
+      overlapMain * 0.75 + seqName * 0.25,
+      overlapAll * 0.70 + Math.max(seqName, seqZone) * 0.30
+    );
+
+    if (brandNorm && queryTokens.has(brandNorm)) {
+      const zoneMatched = zoneNorm && zoneNorm.split(' ').some(z => z && queryTokens.has(z));
+      const landmarkMatched = landmarkNorm && landmarkNorm.split(' ').some(l => l && queryTokens.has(l));
+      if (zoneMatched || landmarkMatched) {
+        score = Math.max(score, 0.92);
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestStation = st;
+    }
+  }
+
+  const rounded = Math.round(Math.min(bestScore, 1.0) * 100) / 100;
+  if (rounded >= threshold && bestStation) {
+    return { station: bestStation, score: rounded };
+  }
+  return { station: null, score: rounded };
+}
+
+function normalizeBotFuelType(raw) {
+  const val = String(raw || '').toLowerCase();
+  const hasEss = /essence|super|\bess\b|sans plomb|both|deux/.test(val);
+  const hasMaz = /mazout|gasoil|gazoil|diesel|\bmaz\b|both|deux/.test(val);
+  if (val === 'both' || (hasEss && hasMaz)) return 'both';
+  if (hasEss) return 'essence';
+  if (hasMaz) return 'mazout';
+  return 'unspecified';
+}
+
+function normalizeBotStatus(raw) {
+  const val = String(raw || '').toLowerCase().trim();
+  if (['distribution', 'starting', 'no_fuel', 'unknown'].includes(val)) return val;
+  if (/sec|epuise|rien|ferme|pas de|rupture|no_fuel|vide/.test(val)) return 'no_fuel';
+  if (/commence|depotage|camion|citerne|bientot|attente/.test(val)) return 'starting';
+  if (/dispo|distrib|sert|ouvert|oui|ok|present/.test(val)) return 'distribution';
+  return 'distribution';
+}
+
+function inferBotQueueStatus(details) {
+  const d = String(details || '').toLowerCase();
+  if (/longue|tres longue|embouteillage|satur/.test(d)) return 'long';
+  if (/moyenne|moderee/.test(d)) return 'medium';
+  if (/courte|fluide|rapide|peu de monde/.test(d)) return 'short';
+  if (/aucune file|pas de file|sans file/.test(d)) return 'none';
+  return 'unknown';
+}
+
+function fallbackParseWhatsAppText(rawText) {
+  if (!rawText) return [];
+  const lines = String(rawText)
+    .split(/\r?\n/)
+    .map(l => l.replace(/^[\s\-•*0-9.)]+/, '').trim())
+    .filter(Boolean);
+
+  let currentFuel = 'unspecified';
+  const items = [];
+
+  for (const line of lines) {
+    const low = line.toLowerCase();
+    if (line.length < 30 && /essence|mazout|gasoil|diesel/.test(low) && line.includes(':')) {
+      currentFuel = normalizeBotFuelType(low);
+      continue;
+    }
+
+    const headPart = line.split(/[:\-–—(]/)[0].trim();
+    const matchHead = matchStationFuzzy(headPart, stations, 0.48);
+    const matchFull = matchStationFuzzy(line, stations, 0.48);
+    const bestMatch = matchHead.score >= matchFull.score ? matchHead : matchFull;
+    const hasBrandKeyword = /kobil|interpetrol|inter\b|mogas|engen|total|delta|city oil|vip|king star|kimoil|safari|mega oil|yakeime|geprotis|lybajas|petro muha|noe/i.test(low);
+
+    if (bestMatch.station || hasBrandKeyword) {
+      let fuel = normalizeBotFuelType(low);
+      if (fuel === 'unspecified') {
+        fuel = currentFuel !== 'unspecified' ? currentFuel : 'both';
+      }
+      const status = normalizeBotStatus(low);
+      items.push({
+        station_name: headPart || line,
+        fuel_type: fuel,
+        status,
+        details: line
+      });
+    }
+  }
+  return items;
+}
+
+async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mimeType = 'image/jpeg' }) {
+  const ai = getGeminiClient();
+  const catalog = stations
+    .filter(s => s.is_active)
+    .map(s => `${s.name} (${s.zone})`)
+    .join(', ');
+
+  const systemInstruction =
+    `Tu es l'assistant d'extraction de données d'Igitoro Live à Bujumbura (Burundi). ` +
+    `Analyse le message texte (souvent transféré de WhatsApp) ou l'image (fiche de distribution de carburant) ` +
+    `et retourne un tableau JSON strict d'objets contenant : station_name, fuel_type ('essence', 'mazout', 'both', 'unspecified'), ` +
+    `status ('distribution', 'starting', 'no_fuel', 'unknown'), et details.\n` +
+    `Catalogue officiel des stations de Bujumbura : ${catalog}.`;
+
+  if (ai && (rawText || imageBase64)) {
+    const parts = [];
+    if (imageBase64) {
+      parts.push({
+        inlineData: {
+          mimeType: mimeType || 'image/jpeg',
+          data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
+        }
+      });
+    }
+    if (rawText) {
+      parts.push({ text: `Message à analyser :\n${rawText}` });
+    } else if (imageBase64) {
+      parts.push({ text: 'Extrais toutes les stations-service et carburants de cette fiche de distribution à Bujumbura.' });
+    }
+
+    for (const modelName of ['gemini-3.8-flash', 'gemini-flash-latest']) {
+      try {
+        const resp = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts },
+          config: {
+            systemInstruction,
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  station_name: { type: Type.STRING },
+                  fuel_type: { type: Type.STRING },
+                  status: { type: Type.STRING },
+                  details: { type: Type.STRING }
+                },
+                required: ['station_name', 'fuel_type', 'status', 'details']
+              }
+            }
+          }
+        });
+        const parsed = JSON.parse((resp.text || '[]').trim());
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(x => ({
+            station_name: String(x.station_name || '').trim(),
+            fuel_type: normalizeBotFuelType(x.fuel_type),
+            status: normalizeBotStatus(x.status),
+            details: String(x.details || '').trim()
+          }));
+        }
+      } catch (_) {}
+    }
+  }
+
+  return fallbackParseWhatsAppText(rawText);
+}
+
+async function sendTelegramApi(method, payload) {
+  const token = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  if (!token) return { ok: false, simulated: true };
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function buildTelegramStatsSummary() {
+  const now = Date.now();
+  const since24h = now - 24 * 3600 * 1000;
+  const activeStations = stations.filter(s => s.is_active).length;
+  const recent24h = reports.filter(r => !r.is_deleted && new Date(r.created_at).getTime() >= since24h);
+  const bot24h = recent24h.filter(r => r.source === 'telegram_bot');
+  const distSet = new Set(recent24h.filter(r => r.fuel_status === 'distribution').map(r => r.station_id));
+  const noFuelSet = new Set(
+    recent24h.filter(r => r.fuel_status === 'no_fuel' && !distSet.has(r.station_id)).map(r => r.station_id)
+  );
+  let pendingCount = 0;
+  for (const b of telegramPendingBatches.values()) {
+    if (b.status === 'pending') pendingCount++;
+  }
+
+  return (
+    `📊 <b>BILAN IGITORO LIVE (24 DERNIÈRES HEURES)</b>\n\n` +
+    `🏥 <b>État du système :</b> En ligne (Service OK)\n` +
+    `⛽ <b>Stations actives :</b> ${activeStations} stations à Bujumbura\n` +
+    `📝 <b>Signalements (24h) :</b> ${recent24h.length} (dont ${bot24h.length} via Bot Telegram)\n` +
+    `🟢 <b>En distribution récente :</b> ${distSet.size} station(s)\n` +
+    `🔴 <b>Signalées à sec :</b> ${noFuelSet.size} station(s)\n` +
+    `⏳ <b>Lots en attente de validation :</b> ${pendingCount}`
+  );
+}
+
+function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw }) {
+  const enrichedItems = [];
+  let matchedCount = 0;
+  let unmatchedCount = 0;
+
+  const fuelLabels = {
+    essence: '⛽ Essence',
+    mazout: '🛢️ Mazout',
+    both: '⛽🛢️ Essence & Mazout',
+    unspecified: '❓ Non précisé'
+  };
+  const stLabels = {
+    distribution: '🟢 En distribution',
+    starting: '🟡 Dépotage / Commence',
+    no_fuel: '🔴 Pas de carburant',
+    unknown: '⚪ Statut inconnu'
+  };
+
+  const lines = [
+    '🤖 <b>PRÉ-VALIDATION IGITORO LIVE</b>',
+    `📥 Source : <i>${sourceType === 'image' ? 'Photo / Fiche de distribution' : 'Message texte / WhatsApp'}</i>`,
+    ''
+  ];
+
+  extractedRaw.forEach((item, idx) => {
+    const rawName = String(item.station_name || '').trim();
+    const fuelType = normalizeBotFuelType(item.fuel_type);
+    const status = normalizeBotStatus(item.status);
+    const details = String(item.details || '').trim();
+
+    const { station: matchedSt, score } = matchStationFuzzy(rawName, stations);
+    if (matchedSt) {
+      matchedCount++;
+      enrichedItems.push({
+        station_id: matchedSt.id,
+        station_name: rawName,
+        matched_name: matchedSt.name,
+        zone: matchedSt.zone,
+        confidence: score,
+        fuel_type: fuelType,
+        status,
+        details
+      });
+      lines.push(
+        `${idx + 1}. ✅ <b>${matchedSt.name}</b> (${matchedSt.zone}) — <i>${Math.round(score * 100)}%</i>\n` +
+          `   • ${stLabels[status] || status} | ${fuelLabels[fuelType] || fuelType}` +
+          (details ? `\n   • 📝 ${details}` : '')
+      );
+    } else {
+      unmatchedCount++;
+      enrichedItems.push({
+        station_id: null,
+        station_name: rawName,
+        matched_name: null,
+        zone: null,
+        confidence: score,
+        fuel_type: fuelType,
+        status,
+        details
+      });
+      lines.push(`${idx + 1}. ⚠️ <b>Station non reconnue :</b> « ${rawName} » <i>(ignorée si confirmé)</i>`);
+    }
+  });
+
+  lines.push('');
+  lines.push(
+    `📊 <b>Bilan :</b> ${matchedCount} station(s) reconnue(s)` +
+      (unmatchedCount ? `, ${unmatchedCount} non reconnue(s)` : '') +
+      '.'
+  );
+  lines.push("🔒 <i>Aucune donnée n'est écrite en production tant que vous n'avez pas confirmé.</i>");
+
+  const batchId = crypto.randomBytes(8).toString('hex');
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        { text: '✅ Confirmer la mise à jour', callback_data: `confirm_batch:${batchId}` },
+        { text: '❌ Annuler', callback_data: `cancel_batch:${batchId}` }
+      ]
+    ]
+  };
+
+  const batch = {
+    id: batchId,
+    chat_id: String(chatId || 'admin'),
+    source_type: sourceType,
+    raw_input: String(rawInput || '').slice(0, 4000),
+    extracted_items: enrichedItems,
+    status: 'pending',
+    summary_html: lines.join('\n'),
+    reply_markup: replyMarkup,
+    created_at: new Date().toISOString(),
+    resolved_at: null
+  };
+
+  telegramPendingBatches.set(batchId, batch);
+  return batch;
+}
+
+function executeBatchConfirmation(batchId) {
+  const batch = telegramPendingBatches.get(batchId);
+  if (!batch) {
+    return { ok: false, inserted: 0, message: '⚠️ Lot introuvable ou expiré.' };
+  }
+  if (batch.status !== 'pending') {
+    return { ok: false, inserted: 0, message: `ℹ️ Ce lot a déjà été traité (statut : ${batch.status}).` };
+  }
+
+  let adminUser = users.find(u => u.is_admin);
+  if (!adminUser) {
+    adminUser = {
+      id: nextUserId++,
+      google_sub: 'telegram-admin-bot',
+      name: 'Admin Igitoro (Telegram Bot)',
+      email: 'admin@igitorolive.bi',
+      reputation_score: 5.0,
+      badge: 'Ambassadeur Fiable',
+      is_admin: true,
+      is_suspended: false,
+      created_at: new Date().toISOString()
+    };
+    users.push(adminUser);
+  }
+
+  let inserted = 0;
+  const updatedNames = [];
+  const nowIso = new Date().toISOString();
+
+  for (const item of batch.extracted_items) {
+    if (!item.station_id) continue;
+    reports.push({
+      id: nextReportId++,
+      station_id: item.station_id,
+      user_id: adminUser.id,
+      fuel_status: item.status || 'distribution',
+      fuel_type: item.fuel_type || 'unspecified',
+      queue_status: inferBotQueueStatus(item.details),
+      queue_bucket: null,
+      wait_bucket: null,
+      comment: item.details || 'Mise à jour validée via Bot Telegram Admin',
+      photo_path: null,
+      source: 'telegram_bot',
+      is_deleted: false,
+      created_at: nowIso
+    });
+    inserted++;
+    updatedNames.push(item.matched_name || `Station #${item.station_id}`);
+  }
+
+  batch.status = 'confirmed';
+  batch.resolved_at = nowIso;
+
+  actionLogs.push({
+    id: actionLogs.length + 1,
+    admin_id: adminUser.id,
+    admin_name: adminUser.name,
+    action: `Bot Telegram : Lot ${batchId} confirmé`,
+    target_type: 'telegram_batch',
+    target_id: batchId,
+    details: `${inserted} signalement(s) publié(s) : ${updatedNames.join(', ')}`,
+    created_at: nowIso
+  });
+
+  const message =
+    `✅ <b>Mise à jour publiée en production !</b>\n` +
+    `• <b>${inserted}</b> signalement(s) enregistré(s) dans la base de données.\n` +
+    `• Stations mises à jour : ${updatedNames.length ? updatedNames.join(', ') : 'Aucune'}`;
+
+  return { ok: true, inserted, updated_stations: updatedNames, message };
+}
+
+function executeBatchCancellation(batchId) {
+  const batch = telegramPendingBatches.get(batchId);
+  if (!batch) {
+    return { ok: false, message: '⚠️ Lot introuvable.' };
+  }
+  if (batch.status !== 'pending') {
+    return { ok: false, message: `ℹ️ Ce lot est déjà à l'état « ${batch.status} ».` };
+  }
+  batch.status = 'cancelled';
+  batch.resolved_at = new Date().toISOString();
+  return {
+    ok: true,
+    message: "❌ <b>Opération annulée.</b> Aucun signalement n'a été écrit dans la base de données."
+  };
+}
+
+// Webhook officiel Telegram (POST /api/telegram/webhook)
+app.post('/api/telegram/webhook', async (req, res) => {
+  const expectedSecret = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
+  const headerSecret = req.headers['x-telegram-bot-api-secret-token'];
+  if (expectedSecret && headerSecret !== expectedSecret) {
+    return res.status(403).json({ detail: 'Secret de webhook Telegram invalide' });
+  }
+
+  const update = req.body || {};
+
+  // 1. Gestion des boutons Inline Keyboard (callback_query)
+  if (update.callback_query) {
+    const cb = update.callback_query;
+    const cbId = cb.id;
+    const data = String(cb.data || '');
+    const chatId = cb.message?.chat?.id;
+    const messageId = cb.message?.message_id;
+
+    if (data.startsWith('confirm_batch:')) {
+      const batchId = data.split(':')[1];
+      const result = executeBatchConfirmation(batchId);
+      if (cbId) {
+        await sendTelegramApi('answerCallbackQuery', {
+          callback_query_id: cbId,
+          text: result.ok ? `✅ ${result.inserted} signalement(s) publié(s) !` : result.message
+        });
+      }
+      if (chatId && messageId) {
+        await sendTelegramApi('editMessageText', {
+          chat_id: chatId,
+          message_id: messageId,
+          text: result.message,
+          parse_mode: 'HTML'
+        });
+      }
+      return res.json({
+        ok: result.ok,
+        action: 'confirmed',
+        batch_id: batchId,
+        inserted: result.inserted,
+        message: result.message
+      });
+    }
+
+    if (data.startsWith('cancel_batch:')) {
+      const batchId = data.split(':')[1];
+      const result = executeBatchCancellation(batchId);
+      if (cbId) {
+        await sendTelegramApi('answerCallbackQuery', {
+          callback_query_id: cbId,
+          text: '❌ Mise à jour annulée.'
+        });
+      }
+      if (chatId && messageId) {
+        await sendTelegramApi('editMessageText', {
+          chat_id: chatId,
+          message_id: messageId,
+          text: result.message,
+          parse_mode: 'HTML'
+        });
+      }
+      return res.json({
+        ok: result.ok,
+        action: 'cancelled',
+        batch_id: batchId,
+        message: result.message
+      });
+    }
+
+    return res.json({ ok: true, action: 'ignored_callback' });
+  }
+
+  // 2. Gestion des messages entrants (Texte, Forward WhatsApp, Photo, Commandes)
+  const message = update.message || update.edited_message;
+  if (!message) {
+    return res.json({ ok: true, action: 'no_message' });
+  }
+
+  const chatId = message.chat?.id || 'admin';
+  const text = String(message.text || message.caption || '').trim();
+  const imageBase64 = String(message.image_base64 || '').trim();
+
+  if (text.startsWith('/stats') || text.startsWith('/bilan') || text.startsWith('/health')) {
+    const summary = buildTelegramStatsSummary();
+    await sendTelegramApi('sendMessage', {
+      chat_id: chatId,
+      text: summary,
+      parse_mode: 'HTML'
+    });
+    return res.json({ ok: true, action: 'stats', message: summary });
+  }
+
+  if (text.startsWith('/start') || text.startsWith('/help')) {
+    const helpMsg =
+      '👋 <b>Bienvenue sur le Bot Admin d\'Igitoro Live !</b>\n\n' +
+      '• Transférez un message WhatsApp ou envoyez une photo de fiche de distribution.\n' +
+      '• Vérifiez le résumé JSON + Fuzzy Matching et cliquez sur <b>✅ Confirmer la mise à jour</b> ou <b>❌ Annuler</b>.\n' +
+      '• Tapez <code>/stats</code> pour obtenir le bilan des 24 dernières heures.';
+    await sendTelegramApi('sendMessage', {
+      chat_id: chatId,
+      text: helpMsg,
+      parse_mode: 'HTML'
+    });
+    return res.json({ ok: true, action: 'help', message: helpMsg });
+  }
+
+  const extractedRaw = await extractBotReportsMultimodal({
+    rawText: text,
+    imageBase64,
+    mimeType: message.mime_type || 'image/jpeg'
+  });
+
+  if (!extractedRaw || extractedRaw.length === 0) {
+    const alertMsg =
+      '⚠️ <b>Aucune station-service détectée.</b> Le message ou l\'image ne contient pas de station identifiable à Bujumbura.';
+    await sendTelegramApi('sendMessage', {
+      chat_id: chatId,
+      text: alertMsg,
+      parse_mode: 'HTML'
+    });
+    return res.json({ ok: false, reason: 'no_stations_extracted', message: alertMsg });
+  }
+
+  const batch = createPendingTelegramBatch({
+    chatId,
+    sourceType: imageBase64 || (message.photo && message.photo.length) ? 'image' : 'text',
+    rawInput: text || '[Image fiche de distribution]',
+    extractedRaw
+  });
+
+  await sendTelegramApi('sendMessage', {
+    chat_id: chatId,
+    text: batch.summary_html,
+    parse_mode: 'HTML',
+    reply_markup: batch.reply_markup
+  });
+
+  return res.json({
+    ok: true,
+    action: 'pending_validation',
+    batch_id: batch.id,
+    extracted_items: batch.extracted_items,
+    summary: batch.summary_html,
+    reply_markup: batch.reply_markup
+  });
 });
 
 // Error handling middleware

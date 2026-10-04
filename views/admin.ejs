@@ -42,6 +42,7 @@
 
 <div class="chips admin-tabs" style="margin-bottom: 20px; border-bottom: 1px solid var(--line); padding-bottom: 8px;">
   <button type="button" class="chip selected admin-tab-btn" onclick="showAdminTab('stations', this)">Stations (<%= stations.length %>)</button>
+  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('telegram', this)">🤖 Bot Telegram & IA</button>
   <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('claims', this)">Revendications (<%= claims.filter(c => c.status === 'pending').length %>)</button>
   <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('abuse', this)">Modération Abus (<%= abuseList.filter(a => a.status === 'pending').length %>)</button>
   <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('users', this)">Utilisateurs (<%= userList.length %>)</button>
@@ -274,6 +275,47 @@
   <% } %>
 </div>
 
+<!-- ================= SECTION 6 : BOT TELEGRAM INTELLIGENT & PRÉ-VALIDATION IA ================= -->
+<div id="tab-telegram" class="admin-section hidden">
+  <div class="card" style="margin-bottom: 16px; border-left: 4px solid var(--pine);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <h2 style="margin: 0 0 4px; font-size: 1.25rem; color: var(--pine-dark);">🤖 Bot Telegram Intelligent (Texte WhatsApp & Vision Fiches)</h2>
+        <p class="muted" style="margin: 0; font-size: 0.88rem;">
+          Webhook actif : <code>POST /api/telegram/webhook</code> · Pré-validation obligatoire via Inline Keyboard avant toute écriture en base.
+        </p>
+      </div>
+      <button type="button" class="btn" onclick="runTelegramBotCommand('/stats')" style="background: var(--pine-50); color: var(--pine-dark); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.85rem;">
+        📊 Tester la commande /stats
+      </button>
+    </div>
+
+    <div style="margin-top: 14px;">
+      <label style="font-weight: 600;">Message brut (ex: message transféré de WhatsApp)
+        <textarea id="tg-sim-text" rows="4" placeholder="Ex:&#10;interpetrol brarudi : essence et mazout dispo, file courte&#10;kobil kizingwe : juste essence&#10;delta kibenga : pompes à sec"></textarea>
+      </label>
+      <label style="font-weight: 600; margin-top: 8px;">Ou Photo d'une fiche de distribution (Vision IA)
+        <input type="file" id="tg-sim-image" accept="image/*" style="margin-top: 4px;">
+      </label>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+        <button type="button" class="btn btn-primary" id="tg-sim-analyze-btn" onclick="simulateTelegramBotInput()">
+          🔍 Analyser & Générer l'aperçu Telegram
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aperçu du message Telegram avec boutons Inline Keyboard -->
+  <div id="tg-sim-preview-card" class="card hidden" style="background: #F4F8F6; border: 1.5px solid var(--pine-border);">
+    <div id="tg-sim-summary-html" style="font-size: 0.92rem; line-height: 1.55; white-space: pre-line; color: var(--ink);"></div>
+    <div id="tg-sim-inline-kb" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px;"></div>
+    <details style="margin-top: 12px; font-size: 0.82rem;">
+      <summary style="cursor: pointer; font-weight: 600; color: var(--pine);">Voir le JSON extrait & Fuzzy Matching</summary>
+      <pre id="tg-sim-json" style="background: #0F2A1D; color: #E2ECE5; padding: 10px; border-radius: 8px; overflow-x: auto; margin-top: 8px; font-size: 0.78rem;"></pre>
+    </details>
+  </div>
+</div>
+
 <!-- ================= MODAL AJOUT STATION ================= -->
 <div id="add-station-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-station-title">
   <div class="modal-card">
@@ -336,6 +378,116 @@
     if (section) section.classList.remove('hidden');
 
     if (btnEl) btnEl.classList.add('selected');
+  }
+
+  async function runTelegramBotCommand(cmd) {
+    const card = document.getElementById('tg-sim-preview-card');
+    const summaryEl = document.getElementById('tg-sim-summary-html');
+    const kbEl = document.getElementById('tg-sim-inline-kb');
+    const jsonEl = document.getElementById('tg-sim-json');
+    if (!card || !summaryEl) return;
+
+    card.classList.remove('hidden');
+    summaryEl.innerHTML = 'Exécution de la commande Telegram…';
+    if (kbEl) kbEl.innerHTML = '';
+
+    const r = await fetch('/api/telegram/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: { chat: { id: 'admin-web' }, text: cmd } })
+    });
+    const d = await r.json();
+    summaryEl.innerHTML = d.message || 'Aucune réponse.';
+    if (jsonEl) jsonEl.textContent = JSON.stringify(d, null, 2);
+  }
+
+  async function simulateTelegramBotInput() {
+    const textVal = (document.getElementById('tg-sim-text')?.value || '').trim();
+    const fileInput = document.getElementById('tg-sim-image');
+    const card = document.getElementById('tg-sim-preview-card');
+    const summaryEl = document.getElementById('tg-sim-summary-html');
+    const kbEl = document.getElementById('tg-sim-inline-kb');
+    const jsonEl = document.getElementById('tg-sim-json');
+    const btn = document.getElementById('tg-sim-analyze-btn');
+
+    let imageBase64 = '';
+    let mimeType = 'image/jpeg';
+    if (fileInput && fileInput.files && fileInput.files[0]) {
+      const f = fileInput.files[0];
+      mimeType = f.type || 'image/jpeg';
+      imageBase64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.readAsDataURL(f);
+      });
+    }
+
+    if (!textVal && !imageBase64) {
+      showAdminBanner('Veuillez saisir un message texte ou choisir une image de fiche de distribution.', true);
+      return;
+    }
+
+    card.classList.remove('hidden');
+    summaryEl.innerHTML = 'Analyse multimodale et Fuzzy Matching en cours…';
+    kbEl.innerHTML = '';
+    if (btn) btn.disabled = true;
+
+    try {
+      const r = await fetch('/api/telegram/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: {
+            chat: { id: 'admin-web' },
+            text: textVal,
+            image_base64: imageBase64,
+            mime_type: mimeType
+          }
+        })
+      });
+      const d = await r.json();
+      summaryEl.innerHTML = d.summary || d.message || 'Analyse terminée.';
+      if (jsonEl) jsonEl.textContent = JSON.stringify(d.extracted_items || d, null, 2);
+
+      const rows = d.reply_markup?.inline_keyboard || [];
+      for (const row of rows) {
+        for (const button of row) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = button.callback_data.startsWith('confirm_') ? 'btn btn-primary' : 'btn';
+          if (!button.callback_data.startsWith('confirm_')) {
+            b.style.background = 'var(--crimson-soft)';
+            b.style.color = 'var(--crimson)';
+            b.style.border = '1px solid var(--crimson)';
+          }
+          b.textContent = button.text;
+          b.onclick = () => triggerTelegramCallback(button.callback_data);
+          kbEl.appendChild(b);
+        }
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function triggerTelegramCallback(callbackData) {
+    const summaryEl = document.getElementById('tg-sim-summary-html');
+    const kbEl = document.getElementById('tg-sim-inline-kb');
+    const r = await fetch('/api/telegram/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query: {
+          id: 'cb-web-' + Date.now(),
+          data: callbackData,
+          message: { chat: { id: 'admin-web' }, message_id: 1 }
+        }
+      })
+    });
+    const d = await r.json();
+    if (summaryEl) summaryEl.innerHTML = d.message || 'Opération effectuée.';
+    if (kbEl) kbEl.innerHTML = '';
+    showAdminBanner(d.action === 'confirmed' ? `✅ ${d.inserted} signalement(s) publié(s) en production !` : '❌ Lot annulé.', d.action !== 'confirmed');
   }
 
   function toggleAddStationModal(show) {
