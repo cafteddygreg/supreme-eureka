@@ -73,7 +73,7 @@ async def telegram_webhook(
     - Les clics sur les boutons Inline Keyboard ([ ✅ Confirmer ] / [ ❌ Annuler ])
     """
     # 1. Vérification du jeton secret du Webhook Telegram si configuré
-    expected_secret = (settings.telegram_webhook_secret or "").strip()
+    expected_secret = settings.sanitized_webhook_secret
     if expected_secret and x_telegram_bot_api_secret_token != expected_secret:
         raise HTTPException(status_code=403, detail="Secret de webhook Telegram invalide")
 

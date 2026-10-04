@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
+    def sanitized_webhook_secret(self) -> str:
+        """Nettoie le secret_token selon les règles strictes de Telegram : uniquement [A-Za-z0-9_-]."""
+        import re
+        return re.sub(r"[^A-Za-z0-9_-]", "", (self.telegram_webhook_secret or "").strip())[:256]
+
+    @property
     def allowed_telegram_chat_ids(self) -> set[int]:
         """Retourne l'ensemble des chat_id Telegram autorisés à piloter le bot admin."""
         raw = (self.telegram_admin_chat_ids or "").strip()

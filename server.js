@@ -1995,6 +1995,13 @@ function isAuthorizedTelegramChat(chatId, req) {
   return numericIds.includes(String(chatId)) || String(chatId) === 'admin-web';
 }
 
+function getSanitizedTelegramSecret() {
+  return (process.env.TELEGRAM_WEBHOOK_SECRET || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 256);
+}
+
 async function setupTelegramWebhookOnStartup() {
   const token = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
   if (!token) return;
@@ -2009,7 +2016,7 @@ async function setupTelegramWebhookOnStartup() {
     url: webhookUrl,
     allowed_updates: ['message', 'callback_query']
   };
-  const secret = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
+  const secret = getSanitizedTelegramSecret();
   if (secret) payload.secret_token = secret;
 
   const res = await sendTelegramApi('setWebhook', payload);
@@ -2241,7 +2248,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
     req.ip === '::ffff:127.0.0.1' ||
     req.hostname === '127.0.0.1' ||
     req.hostname === 'localhost';
-  const expectedSecret = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
+  const expectedSecret = getSanitizedTelegramSecret();
   const headerSecret = req.headers['x-telegram-bot-api-secret-token'];
   if (expectedSecret && headerSecret !== expectedSecret && !isLoopback && !req.session?.user_id) {
     return res.status(403).json({ detail: 'Secret de webhook Telegram invalide' });

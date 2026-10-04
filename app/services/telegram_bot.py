@@ -119,8 +119,8 @@ async def setup_telegram_webhook() -> None:
         "allowed_updates": ["message", "callback_query"],
         "drop_pending_updates": False,
     }
-    if settings.telegram_webhook_secret:
-        payload["secret_token"] = settings.telegram_webhook_secret
+    if settings.sanitized_webhook_secret:
+        payload["secret_token"] = settings.sanitized_webhook_secret
 
     try:
         client = get_http_client()
