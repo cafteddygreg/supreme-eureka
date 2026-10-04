@@ -166,16 +166,62 @@ async def telegram_webhook(
     text = (message.get("text") or message.get("caption") or "").strip()
     photos = message.get("photo") or []
 
+    # Gestionnaire de petits messages d'attente éphémères sur Telegram
+    status_message_id: int | None = None
+    execution_steps: list[str] = []
+
+    async def update_transient_status(action_label: str) -> None:
+        nonlocal status_message_id
+        execution_steps.append(action_label)
+        html_text = f"⏳ <b>Exécution :</b> <i>{action_label}</i>"
+        await telegram_api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+        if status_message_id is None:
+            resp = await telegram_api_call(
+                "sendMessage",
+                {"chat_id": chat_id, "text": html_text, "parse_mode": "HTML"},
+            )
+            msg_id = (resp.get("result") or {}).get("message_id")
+            if msg_id:
+                status_message_id = int(msg_id)
+        else:
+            await telegram_api_call(
+                "editMessageText",
+                {
+                    "chat_id": chat_id,
+                    "message_id": status_message_id,
+                    "text": html_text,
+                    "parse_mode": "HTML",
+                },
+            )
+
+    async def clear_transient_status() -> None:
+        nonlocal status_message_id
+        if status_message_id is not None:
+            await telegram_api_call(
+                "deleteMessage",
+                {"chat_id": chat_id, "message_id": status_message_id},
+            )
+            status_message_id = None
+
     # 1. Commandes d'administration (/stats, /bilan, /start, /help)
     if text.startswith("/stats") or text.startswith("/bilan") or text.startswith("/health"):
+        await update_transient_status("Calcul du bilan des 24 dernières heures…")
         summary_html = generate_stats_summary(db)
+        await clear_transient_status()
         await telegram_api_call(
             "sendMessage",
             {"chat_id": chat_id, "text": summary_html, "parse_mode": "HTML"},
         )
-        return {"ok": True, "action": "stats", "message": summary_html}
+        return {
+            "ok": True,
+            "action": "stats",
+            "execution_steps": execution_steps,
+            "transient_message_deleted": True,
+            "message": summary_html,
+        }
 
     if text.startswith("/start") or text.startswith("/help"):
+        await update_transient_status("Chargement du guide d'utilisation…")
         help_html = (
             "👋 <b>Bienvenue sur le Bot Admin d'Igitoro Live !</b>\n\n"
             "• <b>Transférez un message WhatsApp</b> ou envoyez du texte listant les stations.\n"
@@ -184,11 +230,18 @@ async def telegram_webhook(
             "et vous demandera confirmation via <b>[ ✅ Confirmer la mise à jour ]</b> ou <b>[ ❌ Annuler ]</b>.\n"
             "• Tapez <code>/stats</code> à tout moment pour obtenir le bilan des 24 dernières heures."
         )
+        await clear_transient_status()
         await telegram_api_call(
             "sendMessage",
             {"chat_id": chat_id, "text": help_html, "parse_mode": "HTML"},
         )
-        return {"ok": True, "action": "help", "message": help_html}
+        return {
+            "ok": True,
+            "action": "help",
+            "execution_steps": execution_steps,
+            "transient_message_deleted": True,
+            "message": help_html,
+        }
 
     # 2. Extraction Multimodale (Image Vision ou Texte)
     stations = db.query(Station).filter(Station.is_active == True).all()
@@ -198,16 +251,23 @@ async def telegram_webhook(
 
     if photos:
         source_type = "image"
+        await update_transient_status("Téléchargement de la photo depuis Telegram…")
         largest_photo = photos[-1]
         file_id = largest_photo.get("file_id", "")
         image_bytes, mime_type = await download_telegram_photo(file_id)
         if image_bytes is None and not text:
+            await clear_transient_status()
             err_msg = "⚠️ Impossible de télécharger ou lire l'image envoyée. Veuillez réessayer avec une photo plus nette."
             await telegram_api_call(
                 "sendMessage",
                 {"chat_id": chat_id, "text": err_msg},
             )
             return {"ok": False, "reason": "image_download_failed", "message": err_msg}
+
+    if source_type == "image":
+        await update_transient_status("Déchiffrage de l'image par Vision IA / OCR et détection des stations…")
+    else:
+        await update_transient_status("Analyse du message texte et extraction des stations…")
 
     extracted_items = await extract_reports_with_ai(
         raw_text=text,
@@ -217,6 +277,7 @@ async def telegram_webhook(
     )
 
     if not extracted_items:
+        await clear_transient_status()
         alert_msg = (
             "⚠️ <b>Aucune station-service détectée.</b>\n"
             "Le message ou l'image ne contient pas d'information exploitable ou est illisible. "
@@ -228,6 +289,8 @@ async def telegram_webhook(
         )
         return {"ok": False, "reason": "no_stations_extracted", "message": alert_msg}
 
+    await update_transient_status("Comparaison avec la base de données (stations existantes et nouvelles stations à créer)…")
+
     # 3. Création du lot en attente (Pré-validation obligatoire)
     batch, summary_html, reply_markup = build_pending_batch(
         db=db,
@@ -236,6 +299,9 @@ async def telegram_webhook(
         raw_input=text or "[Image fiche de distribution]",
         extracted_raw=extracted_items,
     )
+
+    # Supprimer le message d'attente dès que la tâche est terminée
+    await clear_transient_status()
 
     tg_resp = await telegram_api_call(
         "sendMessage",
@@ -256,6 +322,8 @@ async def telegram_webhook(
         "action": "pending_validation",
         "batch_id": batch.id,
         "extracted_items": batch.extracted_items,
+        "execution_steps": execution_steps,
+        "transient_message_deleted": True,
         "summary": summary_html,
         "reply_markup": reply_markup,
     }

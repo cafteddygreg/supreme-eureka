@@ -309,6 +309,12 @@
           🖼️ Générer & Tester une vraie image PNG (avec nouvelles stations)
         </button>
       </div>
+
+      <!-- Petit message d'attente éphémère (apparaît pendant l'action et disparaît automatiquement dès la fin) -->
+      <div id="tg-transient-status" class="hidden" role="status" aria-live="polite" style="margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: #FEF3C7; border: 1px solid #F59E0B; color: #92400E; font-size: 0.88rem; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+        <span style="display: inline-block; animation: pulse 1s infinite;">⏳</span>
+        <span id="tg-transient-status-text">Exécution en cours…</span>
+      </div>
     </div>
   </div>
 
@@ -387,6 +393,40 @@
     if (btnEl) btnEl.classList.add('selected');
   }
 
+  let transientStepTimer = null;
+
+  function showTransientBotStatus(stepsOrText) {
+    const box = document.getElementById('tg-transient-status');
+    const txt = document.getElementById('tg-transient-status-text');
+    if (!box || !txt) return;
+    if (transientStepTimer) {
+      clearInterval(transientStepTimer);
+      transientStepTimer = null;
+    }
+    const steps = Array.isArray(stepsOrText) ? stepsOrText : [stepsOrText];
+    let idx = 0;
+    txt.innerHTML = `<strong>Exécution :</strong> ${steps[0]}`;
+    box.classList.remove('hidden');
+
+    if (steps.length > 1) {
+      transientStepTimer = setInterval(() => {
+        idx = Math.min(idx + 1, steps.length - 1);
+        txt.innerHTML = `<strong>Exécution :</strong> ${steps[idx]}`;
+      }, 900);
+    }
+  }
+
+  function hideTransientBotStatus() {
+    if (transientStepTimer) {
+      clearInterval(transientStepTimer);
+      transientStepTimer = null;
+    }
+    const box = document.getElementById('tg-transient-status');
+    const txt = document.getElementById('tg-transient-status-text');
+    if (txt) txt.textContent = '';
+    if (box) box.classList.add('hidden');
+  }
+
   async function runTelegramBotCommand(cmd) {
     const card = document.getElementById('tg-sim-preview-card');
     const summaryEl = document.getElementById('tg-sim-summary-html');
@@ -394,18 +434,22 @@
     const jsonEl = document.getElementById('tg-sim-json');
     if (!card || !summaryEl) return;
 
-    card.classList.remove('hidden');
-    summaryEl.innerHTML = 'Exécution de la commande Telegram…';
+    showTransientBotStatus('Calcul du bilan des 24 dernières heures et vérification de la base de données…');
     if (kbEl) kbEl.innerHTML = '';
 
-    const r = await fetch('/api/telegram/webhook', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: { chat: { id: 'admin-web' }, text: cmd } })
-    });
-    const d = await r.json();
-    summaryEl.innerHTML = d.message || 'Aucune réponse.';
-    if (jsonEl) jsonEl.textContent = JSON.stringify(d, null, 2);
+    try {
+      const r = await fetch('/api/telegram/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: { chat: { id: 'admin-web' }, text: cmd } })
+      });
+      const d = await r.json();
+      card.classList.remove('hidden');
+      summaryEl.innerHTML = d.message || 'Aucune réponse.';
+      if (jsonEl) jsonEl.textContent = JSON.stringify(d, null, 2);
+    } finally {
+      hideTransientBotStatus();
+    }
   }
 
   let generatedTestImageBase64 = '';
@@ -497,10 +541,19 @@
       return;
     }
 
-    card.classList.remove('hidden');
-    summaryEl.innerHTML = imageBase64
-      ? '👁️ Lecture réelle des pixels de l\'image (Gemini Vision IA / OCR) et détection des stations (existantes + nouvelles)…'
-      : 'Analyse multimodale et détection des stations (existantes + nouvelles) en cours…';
+    if (imageBase64) {
+      showTransientBotStatus([
+        'Réception et lecture des pixels de l\'image…',
+        'Déchiffrage de l\'image par Vision IA / OCR et détection des stations…',
+        'Comparaison avec la base de données (stations existantes et nouvelles stations à créer)…'
+      ]);
+    } else {
+      showTransientBotStatus([
+        'Analyse du message texte et extraction des stations…',
+        'Comparaison avec la base de données (stations existantes et nouvelles stations à créer)…'
+      ]);
+    }
+
     kbEl.innerHTML = '';
     if (btn) btn.disabled = true;
 
@@ -518,6 +571,7 @@
         })
       });
       const d = await r.json();
+      card.classList.remove('hidden');
       summaryEl.innerHTML = d.summary || d.message || 'Analyse terminée.';
       if (jsonEl) jsonEl.textContent = JSON.stringify(d, null, 2);
 
@@ -538,6 +592,7 @@
         }
       }
     } finally {
+      hideTransientBotStatus();
       if (btn) btn.disabled = false;
     }
   }
@@ -545,25 +600,35 @@
   async function triggerTelegramCallback(callbackData) {
     const summaryEl = document.getElementById('tg-sim-summary-html');
     const kbEl = document.getElementById('tg-sim-inline-kb');
-    const r = await fetch('/api/telegram/webhook', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        callback_query: {
-          id: 'cb-web-' + Date.now(),
-          data: callbackData,
-          message: { chat: { id: 'admin-web' }, message_id: 1 }
-        }
-      })
-    });
-    const d = await r.json();
-    if (summaryEl) summaryEl.innerHTML = d.message || 'Opération effectuée.';
-    if (kbEl) kbEl.innerHTML = '';
-    if (d.action === 'confirmed') {
-      const createdInfo = d.created_stations_count ? ` (${d.created_stations_count} nouvelle(s) station(s) créée(s))` : '';
-      showAdminBanner(`✅ ${d.inserted} signalement(s) publié(s) en production${createdInfo} !`, false);
-    } else {
-      showAdminBanner('❌ Lot annulé. Aucune modification en base de données.', true);
+    const isConfirm = String(callbackData || '').startsWith('confirm_');
+    showTransientBotStatus(
+      isConfirm
+        ? 'Création des nouvelles stations et enregistrement des signalements dans la base de données…'
+        : 'Annulation du lot en cours…'
+    );
+    try {
+      const r = await fetch('/api/telegram/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query: {
+            id: 'cb-web-' + Date.now(),
+            data: callbackData,
+            message: { chat: { id: 'admin-web' }, message_id: 1 }
+          }
+        })
+      });
+      const d = await r.json();
+      if (summaryEl) summaryEl.innerHTML = d.message || 'Opération effectuée.';
+      if (kbEl) kbEl.innerHTML = '';
+      if (d.action === 'confirmed') {
+        const createdInfo = d.created_stations_count ? ` (${d.created_stations_count} nouvelle(s) station(s) créée(s))` : '';
+        showAdminBanner(`✅ ${d.inserted} signalement(s) publié(s) en production${createdInfo} !`, false);
+      } else {
+        showAdminBanner('❌ Lot annulé. Aucune modification en base de données.', true);
+      }
+    } finally {
+      hideTransientBotStatus();
     }
   }
 

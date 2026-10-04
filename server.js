@@ -2616,6 +2616,59 @@ function executeBatchCancellation(batchId) {
   };
 }
 
+// Gestionnaire de petits messages d'attente éphémères sur Telegram (affichés pendant l'action puis supprimés dès la fin)
+function createTelegramTransientStatus(chatId) {
+  let statusMessageId = null;
+  const steps = [];
+  let deleted = false;
+
+  return {
+    steps,
+    get isDeleted() {
+      return deleted;
+    },
+    async update(actionLabel) {
+      const htmlText = `⏳ <b>Exécution :</b> <i>${escapeTelegramHtml(actionLabel)}</i>`;
+      steps.push(actionLabel);
+
+      await sendTelegramApi('sendChatAction', {
+        chat_id: chatId,
+        action: 'typing'
+      });
+
+      if (!statusMessageId) {
+        const res = await sendTelegramApi('sendMessage', {
+          chat_id: chatId,
+          text: htmlText,
+          parse_mode: 'HTML'
+        });
+        if (res && res.ok && res.result && res.result.message_id) {
+          statusMessageId = res.result.message_id;
+        } else {
+          statusMessageId = `sim-${Date.now()}`;
+        }
+      } else if (!String(statusMessageId).startsWith('sim-')) {
+        await sendTelegramApi('editMessageText', {
+          chat_id: chatId,
+          message_id: statusMessageId,
+          text: htmlText,
+          parse_mode: 'HTML'
+        });
+      }
+    },
+    async clear() {
+      if (statusMessageId && !String(statusMessageId).startsWith('sim-')) {
+        await sendTelegramApi('deleteMessage', {
+          chat_id: chatId,
+          message_id: statusMessageId
+        });
+      }
+      statusMessageId = null;
+      deleted = true;
+    }
+  };
+}
+
 // Webhook officiel Telegram (POST /api/telegram/webhook)
 app.post('/api/telegram/webhook', async (req, res) => {
   const isLoopback =
@@ -2642,7 +2695,12 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
     if (data.startsWith('confirm_batch:')) {
       const batchId = data.split(':')[1];
+      const progress = createTelegramTransientStatus(chatId || 'admin');
+      await progress.update('Création des nouvelles stations et enregistrement des signalements dans la base de données…');
+
       const result = executeBatchConfirmation(batchId);
+      await progress.clear();
+
       if (cbId) {
         await sendTelegramApi('answerCallbackQuery', {
           callback_query_id: cbId,
@@ -2667,13 +2725,20 @@ app.post('/api/telegram/webhook', async (req, res) => {
         created_stations_count: result.created_stations_count || 0,
         created_stations: result.created_stations || [],
         updated_stations: result.updated_stations || [],
+        execution_steps: progress.steps,
+        transient_message_deleted: progress.isDeleted,
         message: result.message
       });
     }
 
     if (data.startsWith('cancel_batch:')) {
       const batchId = data.split(':')[1];
+      const progress = createTelegramTransientStatus(chatId || 'admin');
+      await progress.update('Annulation du lot en cours…');
+
       const result = executeBatchCancellation(batchId);
+      await progress.clear();
+
       if (cbId) {
         await sendTelegramApi('answerCallbackQuery', {
           callback_query_id: cbId,
@@ -2692,6 +2757,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
         ok: result.ok,
         action: 'cancelled',
         batch_id: batchId,
+        execution_steps: progress.steps,
+        transient_message_deleted: progress.isDeleted,
         message: result.message
       });
     }
@@ -2717,83 +2784,133 @@ app.post('/api/telegram/webhook', async (req, res) => {
   const text = String(message.text || message.caption || '').trim();
   let imageBase64 = String(message.image_base64 || '').trim();
   let mimeType = message.mime_type || 'image/jpeg';
+  const hasTelegramPhoto = Array.isArray(message.photo) && message.photo.length > 0;
+  const hasTelegramDocImage = Boolean(message.document && String(message.document.mime_type || '').startsWith('image/'));
+  const isImageInput = Boolean(imageBase64 || hasTelegramPhoto || hasTelegramDocImage);
 
-  if (!imageBase64 && Array.isArray(message.photo) && message.photo.length > 0) {
-    const largestPhoto = message.photo[message.photo.length - 1];
-    const downloaded = await downloadTelegramPhotoBase64(largestPhoto.file_id);
-    imageBase64 = downloaded.base64;
-    mimeType = downloaded.mimeType;
-  } else if (!imageBase64 && message.document && String(message.document.mime_type || '').startsWith('image/')) {
-    const downloaded = await downloadTelegramPhotoBase64(message.document.file_id);
-    imageBase64 = downloaded.base64;
-    mimeType = message.document.mime_type || downloaded.mimeType;
-  }
+  const progress = createTelegramTransientStatus(chatId);
 
-  if (text.startsWith('/stats') || text.startsWith('/bilan') || text.startsWith('/health')) {
-    const summary = buildTelegramStatsSummary();
+  try {
+    if (text.startsWith('/stats') || text.startsWith('/bilan') || text.startsWith('/health')) {
+      await progress.update('Calcul du bilan des 24 dernières heures et vérification de la base de données…');
+      const summary = buildTelegramStatsSummary();
+      await progress.clear();
+
+      await sendTelegramApi('sendMessage', {
+        chat_id: chatId,
+        text: summary,
+        parse_mode: 'HTML'
+      });
+      return res.json({
+        ok: true,
+        action: 'stats',
+        execution_steps: progress.steps,
+        transient_message_deleted: progress.isDeleted,
+        message: summary
+      });
+    }
+
+    if (text.startsWith('/start') || text.startsWith('/help')) {
+      await progress.update('Chargement du guide du Bot Admin Igitoro Live…');
+      const helpMsg =
+        '👋 <b>Bienvenue sur le Bot Admin d\'Igitoro Live !</b>\n\n' +
+        '• Transférez un message WhatsApp ou envoyez une photo de fiche de distribution.\n' +
+        '• Vérifiez le résumé JSON + Fuzzy Matching et cliquez sur <b>✅ Confirmer la mise à jour</b> ou <b>❌ Annuler</b>.\n' +
+        '• Tapez <code>/stats</code> pour obtenir le bilan des 24 dernières heures.';
+      await progress.clear();
+
+      await sendTelegramApi('sendMessage', {
+        chat_id: chatId,
+        text: helpMsg,
+        parse_mode: 'HTML'
+      });
+      return res.json({
+        ok: true,
+        action: 'help',
+        execution_steps: progress.steps,
+        transient_message_deleted: progress.isDeleted,
+        message: helpMsg
+      });
+    }
+
+    if (!imageBase64 && hasTelegramPhoto) {
+      await progress.update('Téléchargement de la photo depuis Telegram…');
+      const largestPhoto = message.photo[message.photo.length - 1];
+      const downloaded = await downloadTelegramPhotoBase64(largestPhoto.file_id);
+      imageBase64 = downloaded.base64;
+      mimeType = downloaded.mimeType;
+    } else if (!imageBase64 && hasTelegramDocImage) {
+      await progress.update('Téléchargement du fichier image depuis Telegram…');
+      const downloaded = await downloadTelegramPhotoBase64(message.document.file_id);
+      imageBase64 = downloaded.base64;
+      mimeType = message.document.mime_type || downloaded.mimeType;
+    }
+
+    if (isImageInput) {
+      await progress.update('Déchiffrage de l\'image par Vision IA / OCR et détection des stations…');
+    } else {
+      await progress.update('Analyse du message texte et extraction des stations…');
+    }
+
+    const extractedRaw = await extractBotReportsMultimodal({
+      rawText: text,
+      imageBase64,
+      mimeType
+    });
+
+    if (!extractedRaw || extractedRaw.length === 0) {
+      await progress.clear();
+      const alertMsg =
+        '⚠️ <b>Aucune station-service détectée.</b> Le message ou l\'image ne contient pas de station identifiable à Bujumbura.';
+      await sendTelegramApi('sendMessage', {
+        chat_id: chatId,
+        text: alertMsg,
+        parse_mode: 'HTML'
+      });
+      return res.json({
+        ok: false,
+        reason: 'no_stations_extracted',
+        execution_steps: progress.steps,
+        transient_message_deleted: progress.isDeleted,
+        message: alertMsg
+      });
+    }
+
+    await progress.update('Comparaison avec la base de données (stations existantes et nouvelles stations à créer)…');
+
+    const batch = createPendingTelegramBatch({
+      chatId,
+      sourceType: isImageInput ? 'image' : 'text',
+      rawInput: text || '[Image fiche de distribution]',
+      extractedRaw
+    });
+
+    // Supprimer le petit message d'attente dès que l'analyse est terminée !
+    await progress.clear();
+
     await sendTelegramApi('sendMessage', {
       chat_id: chatId,
-      text: summary,
-      parse_mode: 'HTML'
+      text: batch.summary_html,
+      parse_mode: 'HTML',
+      reply_markup: batch.reply_markup
     });
-    return res.json({ ok: true, action: 'stats', message: summary });
-  }
 
-  if (text.startsWith('/start') || text.startsWith('/help')) {
-    const helpMsg =
-      '👋 <b>Bienvenue sur le Bot Admin d\'Igitoro Live !</b>\n\n' +
-      '• Transférez un message WhatsApp ou envoyez une photo de fiche de distribution.\n' +
-      '• Vérifiez le résumé JSON + Fuzzy Matching et cliquez sur <b>✅ Confirmer la mise à jour</b> ou <b>❌ Annuler</b>.\n' +
-      '• Tapez <code>/stats</code> pour obtenir le bilan des 24 dernières heures.';
-    await sendTelegramApi('sendMessage', {
-      chat_id: chatId,
-      text: helpMsg,
-      parse_mode: 'HTML'
+    return res.json({
+      ok: true,
+      action: 'pending_validation',
+      batch_id: batch.id,
+      engine: batch.engine,
+      deciphered_text: batch.deciphered_text,
+      extracted_items: batch.extracted_items,
+      execution_steps: progress.steps,
+      transient_message_deleted: progress.isDeleted,
+      summary: batch.summary_html,
+      reply_markup: batch.reply_markup
     });
-    return res.json({ ok: true, action: 'help', message: helpMsg });
+  } catch (err) {
+    await progress.clear();
+    throw err;
   }
-
-  const extractedRaw = await extractBotReportsMultimodal({
-    rawText: text,
-    imageBase64,
-    mimeType
-  });
-
-  if (!extractedRaw || extractedRaw.length === 0) {
-    const alertMsg =
-      '⚠️ <b>Aucune station-service détectée.</b> Le message ou l\'image ne contient pas de station identifiable à Bujumbura.';
-    await sendTelegramApi('sendMessage', {
-      chat_id: chatId,
-      text: alertMsg,
-      parse_mode: 'HTML'
-    });
-    return res.json({ ok: false, reason: 'no_stations_extracted', message: alertMsg });
-  }
-
-  const batch = createPendingTelegramBatch({
-    chatId,
-    sourceType: imageBase64 || (message.photo && message.photo.length) ? 'image' : 'text',
-    rawInput: text || '[Image fiche de distribution]',
-    extractedRaw
-  });
-
-  await sendTelegramApi('sendMessage', {
-    chat_id: chatId,
-    text: batch.summary_html,
-    parse_mode: 'HTML',
-    reply_markup: batch.reply_markup
-  });
-
-  return res.json({
-    ok: true,
-    action: 'pending_validation',
-    batch_id: batch.id,
-    engine: batch.engine,
-    deciphered_text: batch.deciphered_text,
-    extracted_items: batch.extracted_items,
-    summary: batch.summary_html,
-    reply_markup: batch.reply_markup
-  });
 });
 
 // Error handling middleware

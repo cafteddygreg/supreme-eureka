@@ -870,6 +870,8 @@ async function runTests() {
     const data = await res.json();
     assert.strictEqual(data.ok, true);
     assert.strictEqual(data.action, 'pending_validation');
+    assert(Array.isArray(data.execution_steps) && data.execution_steps.length >= 2, 'Les étapes d\'exécution éphémères doivent être enregistrées');
+    assert.strictEqual(data.transient_message_deleted, true, 'Le message d\'attente doit être supprimé une fois l\'action terminée');
     assert(data.summary.includes('Nouvelle station à créer'));
 
     // Vérifier que Kobil Gihosha est détectée comme nouvelle station à créer (et non fusionnée avec une autre station Kobil)
