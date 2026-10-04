@@ -849,6 +849,69 @@ async function runTests() {
     assert(statsData.message.includes('BILAN IGITORO LIVE'));
   });
 
+  await test('POST /api/telegram/webhook : Détection de nouvelles stations absentes de la BDD, pré-confirmation et création automatique après confirmation', async () => {
+    const l1 = String.fromCharCode(97 + (Date.now() % 26));
+    const l2 = String.fromCharCode(97 + ((Date.now() >> 4) % 26));
+    const l3 = String.fromCharCode(97 + ((Date.now() >> 8) % 26));
+    const branchWord = `Nyabagere${l1}${l2}${l3}`;
+    const st1Name = `Kobil Gihosha ${branchWord}`;
+    const st2Name = `Rubis Kajaga ${branchWord}`;
+    const res = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          chat: { id: 999001 },
+          text: `1. ${st1Name} : Essence disponible, file courte\n2. ${st2Name} : Mazout disponible\n3. InterPetrol Brarudi : Essence et Mazout`
+        }
+      })
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.action, 'pending_validation');
+    assert(data.summary.includes('Nouvelle station à créer'));
+
+    // Vérifier que Kobil Gihosha est détectée comme nouvelle station à créer (et non fusionnée avec une autre station Kobil)
+    const newGihosha = data.extracted_items.find(
+      x => x.will_create_station && (/gihosha/i.test(x.matched_name) || /gihosha/i.test(x.zone))
+    );
+    assert(newGihosha, 'La nouvelle station à Gihosha doit être identifiée comme nouvelle station à créer');
+    assert.strictEqual(newGihosha.zone, 'Gihosha');
+    assert.strictEqual(newGihosha.commune, 'Ntahangwa');
+
+    // Vérifier qu'avant confirmation, la station n'existe PAS encore dans la BDD
+    const beforeCheck = await fetch(`${BASE_URL}/api/stations?q=${encodeURIComponent(branchWord)}`);
+    const beforeList = await beforeCheck.json();
+    assert.strictEqual(beforeList.length, 0);
+
+    // Confirmer le lot -> doit créer les nouvelles stations ET publier les signalements
+    const confirmRes = await fetch(`${BASE_URL}/api/telegram/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query: {
+          id: 'cb-test-create-stations',
+          data: `confirm_batch:${data.batch_id}`,
+          message: { chat: { id: 999001 }, message_id: 12 }
+        }
+      })
+    });
+    const confirmData = await confirmRes.json();
+    assert.strictEqual(confirmData.ok, true);
+    assert(confirmData.created_stations_count >= 2, 'Au moins 2 nouvelles stations doivent être créées');
+    assert(confirmData.inserted >= 3);
+
+    // Vérifier que la nouvelle station existe désormais dans la BDD avec son signalement actif !
+    const afterCheck = await fetch(`${BASE_URL}/api/stations?q=Gihosha`);
+    const afterList = await afterCheck.json();
+    const createdSt = afterList.find(s => /gihosha/i.test(s.name) || /gihosha/i.test(s.zone));
+    assert(createdSt, 'La nouvelle station Kobil Gihosha doit maintenant exister dans GET /api/stations');
+    assert.strictEqual(createdSt.zone, 'Gihosha');
+    assert.strictEqual(createdSt.state.status, 'distribution');
+    assert.strictEqual(createdSt.state.fuel_type, 'essence');
+  });
+
   console.log(`\n========================================`);
   console.log(`Résultats : ${passed} passés, ${failed} échoués`);
   console.log(`========================================`);

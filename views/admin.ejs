@@ -294,12 +294,19 @@
       <label style="font-weight: 600;">Message brut (ex: message transféré de WhatsApp)
         <textarea id="tg-sim-text" rows="4" placeholder="Ex:&#10;interpetrol brarudi : essence et mazout dispo, file courte&#10;kobil kizingwe : juste essence&#10;delta kibenga : pompes à sec"></textarea>
       </label>
-      <label style="font-weight: 600; margin-top: 8px;">Ou Photo d'une fiche de distribution (Vision IA)
-        <input type="file" id="tg-sim-image" accept="image/*" style="margin-top: 4px;">
+      <label style="font-weight: 600; margin-top: 8px;">Ou Photo d'une fiche de distribution (Vision IA / OCR Réel)
+        <input type="file" id="tg-sim-image" accept="image/*" style="margin-top: 4px;" onchange="previewSelectedBotImage(this)">
       </label>
+      <div id="tg-sim-image-preview-wrap" class="hidden" style="margin-top: 10px; background: var(--surface-subtle); padding: 10px; border-radius: 8px; border: 1px dashed var(--pine-border);">
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--pine-dark); margin-bottom: 6px;">🖼️ Image envoyée au moteur de Vision IA / OCR :</div>
+        <img id="tg-sim-image-preview" alt="Aperçu fiche de distribution" style="max-width: 100%; max-height: 240px; border-radius: 6px; border: 1px solid var(--line); display: block;">
+      </div>
       <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
         <button type="button" class="btn btn-primary" id="tg-sim-analyze-btn" onclick="simulateTelegramBotInput()">
           🔍 Analyser & Générer l'aperçu Telegram
+        </button>
+        <button type="button" class="btn" onclick="generateAndTestSampleSheetImage()" style="background: var(--surface); border: 1.5px solid var(--pine); color: var(--pine-dark); font-weight: 700;">
+          🖼️ Générer & Tester une vraie image PNG (avec nouvelles stations)
         </button>
       </div>
     </div>
@@ -401,7 +408,70 @@
     if (jsonEl) jsonEl.textContent = JSON.stringify(d, null, 2);
   }
 
-  async function simulateTelegramBotInput() {
+  let generatedTestImageBase64 = '';
+
+  function previewSelectedBotImage(input) {
+    generatedTestImageBase64 = '';
+    const wrap = document.getElementById('tg-sim-image-preview-wrap');
+    const img = document.getElementById('tg-sim-image-preview');
+    if (!input || !input.files || !input.files[0]) {
+      if (wrap) wrap.classList.add('hidden');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (img) img.src = String(reader.result || '');
+      if (wrap) wrap.classList.remove('hidden');
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+
+  async function generateAndTestSampleSheetImage() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 920;
+    canvas.height = 460;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = '#1B4332';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
+
+    ctx.fillStyle = '#0F2A1D';
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.fillText('FICHE DE DISTRIBUTION CARBURANT BUJUMBURA', 40, 68);
+
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 24px Arial, sans-serif';
+    const rows = [
+      '1. InterPetrol Brasserie : Essence et Mazout disponible',
+      '2. Kobil Gihosha : Essence disponible, file courte',
+      '3. Station Tanganyika Ruziba : Mazout disponible',
+      '4. Delta Kibenga : Pompes a sec'
+    ];
+    rows.forEach((line, idx) => {
+      ctx.fillText(line, 44, 145 + idx * 68);
+    });
+
+    const dataUrl = canvas.toDataURL('image/png');
+    generatedTestImageBase64 = dataUrl;
+
+    const textEl = document.getElementById('tg-sim-text');
+    if (textEl) textEl.value = '';
+    const fileInput = document.getElementById('tg-sim-image');
+    if (fileInput) fileInput.value = '';
+
+    const wrap = document.getElementById('tg-sim-image-preview-wrap');
+    const img = document.getElementById('tg-sim-image-preview');
+    if (img) img.src = dataUrl;
+    if (wrap) wrap.classList.remove('hidden');
+
+    await simulateTelegramBotInput(dataUrl, 'image/png');
+  }
+
+  async function simulateTelegramBotInput(overrideImageBase64 = '', overrideMimeType = '') {
     const textVal = (document.getElementById('tg-sim-text')?.value || '').trim();
     const fileInput = document.getElementById('tg-sim-image');
     const card = document.getElementById('tg-sim-preview-card');
@@ -410,9 +480,9 @@
     const jsonEl = document.getElementById('tg-sim-json');
     const btn = document.getElementById('tg-sim-analyze-btn');
 
-    let imageBase64 = '';
-    let mimeType = 'image/jpeg';
-    if (fileInput && fileInput.files && fileInput.files[0]) {
+    let imageBase64 = overrideImageBase64 || generatedTestImageBase64 || '';
+    let mimeType = overrideMimeType || (generatedTestImageBase64 ? 'image/png' : 'image/jpeg');
+    if (!imageBase64 && fileInput && fileInput.files && fileInput.files[0]) {
       const f = fileInput.files[0];
       mimeType = f.type || 'image/jpeg';
       imageBase64 = await new Promise((resolve) => {
@@ -428,7 +498,9 @@
     }
 
     card.classList.remove('hidden');
-    summaryEl.innerHTML = 'Analyse multimodale et Fuzzy Matching en cours…';
+    summaryEl.innerHTML = imageBase64
+      ? '👁️ Lecture réelle des pixels de l\'image (Gemini Vision IA / OCR) et détection des stations (existantes + nouvelles)…'
+      : 'Analyse multimodale et détection des stations (existantes + nouvelles) en cours…';
     kbEl.innerHTML = '';
     if (btn) btn.disabled = true;
 
@@ -447,7 +519,7 @@
       });
       const d = await r.json();
       summaryEl.innerHTML = d.summary || d.message || 'Analyse terminée.';
-      if (jsonEl) jsonEl.textContent = JSON.stringify(d.extracted_items || d, null, 2);
+      if (jsonEl) jsonEl.textContent = JSON.stringify(d, null, 2);
 
       const rows = d.reply_markup?.inline_keyboard || [];
       for (const row of rows) {
@@ -487,7 +559,12 @@
     const d = await r.json();
     if (summaryEl) summaryEl.innerHTML = d.message || 'Opération effectuée.';
     if (kbEl) kbEl.innerHTML = '';
-    showAdminBanner(d.action === 'confirmed' ? `✅ ${d.inserted} signalement(s) publié(s) en production !` : '❌ Lot annulé.', d.action !== 'confirmed');
+    if (d.action === 'confirmed') {
+      const createdInfo = d.created_stations_count ? ` (${d.created_stations_count} nouvelle(s) station(s) créée(s))` : '';
+      showAdminBanner(`✅ ${d.inserted} signalement(s) publié(s) en production${createdInfo} !`, false);
+    } else {
+      showAdminBanner('❌ Lot annulé. Aucune modification en base de données.', true);
+    }
   }
 
   function toggleAddStationModal(show) {

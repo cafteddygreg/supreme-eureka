@@ -519,12 +519,29 @@ def build_pending_batch(
             )
         else:
             unmatched_count += 1
+            raw_clean = (raw_name or "Nouvelle Station").strip()
+            zone_guess = (item.get("zone") or "").strip() or "Bujumbura"
+            brand_guess = (item.get("brand") or "").strip() or None
+            if not brand_guess:
+                for b in ("InterPetrol", "Kobil", "Mogas", "Engen", "TotalEnergies", "Delta", "City Oil", "VIP", "King Star", "Rubis"):
+                    if b.lower() in raw_clean.lower():
+                        brand_guess = b
+                        break
+            proposed_station = {
+                "name": raw_clean,
+                "brand": brand_guess,
+                "zone": zone_guess,
+                "commune": item.get("commune") or "Mukaza",
+                "location_text": item.get("location_text") or f"Quartier {zone_guess}, Bujumbura",
+            }
             enriched_items.append(
                 {
                     "station_id": None,
+                    "will_create_station": True,
+                    "proposed_station": proposed_station,
                     "station_name": raw_name,
-                    "matched_name": None,
-                    "zone": None,
+                    "matched_name": raw_clean,
+                    "zone": zone_guess,
                     "confidence": score,
                     "fuel_type": fuel_type,
                     "status": status,
@@ -532,14 +549,16 @@ def build_pending_batch(
                 }
             )
             lines_summary.append(
-                f"{idx}. ⚠️ <b>Station non reconnue :</b> « {raw_name} » <i>(ignorée si confirmé)</i>"
+                f"{idx}. 🆕 <b>[Nouvelle station à créer] {raw_clean}</b> ({zone_guess})\n"
+                f"   • ⚡ Action : <b>Créer dans la BDD</b> + publier ({STATUS_LABELS.get(status, status)} | {FUEL_LABELS.get(fuel_type, fuel_type)})"
+                + (f"\n   • 📝 {details}" if details else "")
             )
 
     lines_summary.append("")
     lines_summary.append(
-        f"📊 <b>Bilan :</b> {matched_count} station(s) reconnue(s)"
-        + (f", {unmatched_count} non reconnue(s)" if unmatched_count else "")
-        + "."
+        f"📊 <b>Ce que je vais envoyer dans la base de données si vous confirmez :</b>\n"
+        f"• 🔄 <b>{matched_count}</b> station(s) existante(s) à mettre à jour\n"
+        f"• 🆕 <b>{unmatched_count}</b> nouvelle(s) station(s) à créer automatiquement"
     )
     lines_summary.append("🔒 <i>Aucune donnée n'est écrite en production tant que vous n'avez pas confirmé.</i>")
 
@@ -611,10 +630,29 @@ def confirm_pending_batch(db: Session, batch_id: str, chat_id: str) -> tuple[boo
 
     admin_user = get_or_create_bot_admin_user(db)
     inserted_count = 0
+    created_stations_count = 0
     station_names: list[str] = []
+    created_station_names: list[str] = []
 
     for item in batch.extracted_items or []:
         st_id = item.get("station_id")
+        if not st_id and item.get("will_create_station") and item.get("proposed_station"):
+            prop = item["proposed_station"]
+            new_st = Station(
+                name=prop.get("name") or "Nouvelle Station",
+                brand=prop.get("brand"),
+                zone=prop.get("zone") or "Bujumbura",
+                location_text=prop.get("location_text") or f"Quartier {prop.get('zone', 'Bujumbura')}, Bujumbura",
+                landmarks=item.get("details") or None,
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(new_st)
+            db.flush()
+            st_id = new_st.id
+            created_stations_count += 1
+            created_station_names.append(f"{new_st.name} ({new_st.zone})")
+
         if not st_id:
             continue
 
@@ -639,15 +677,16 @@ def confirm_pending_batch(db: Session, batch_id: str, chat_id: str) -> tuple[boo
         ActionLog(
             user_id=admin_user.id,
             action="telegram_batch_confirmed",
-            details=f"Lot {batch_id} confirmé ({inserted_count} signalements : {', '.join(station_names)})",
+            details=f"Lot {batch_id} confirmé ({created_stations_count} nouvelles stations, {inserted_count} signalements : {', '.join(station_names)})",
         )
     )
     db.commit()
 
     msg = (
         f"✅ <b>Mise à jour publiée en production !</b>\n"
-        f"• <b>{inserted_count}</b> signalement(s) enregistré(s) dans PostgreSQL.\n"
-        f"• Stations mises à jour : {', '.join(station_names) if station_names else 'Aucune'}"
+        f"• 📝 <b>{inserted_count}</b> signalement(s) enregistré(s) dans la base de données.\n"
+        + (f"• 🆕 <b>{created_stations_count} nouvelle(s) station(s) créée(s) :</b> {', '.join(created_station_names)}\n" if created_stations_count else "")
+        + f"• ⛽ Stations mises à jour : {', '.join(station_names) if station_names else 'Aucune'}"
     )
     return True, msg, inserted_count
 

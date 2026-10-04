@@ -9,6 +9,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleGenAI, Type } from '@google/genai';
+import Tesseract from 'tesseract.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -946,7 +947,7 @@ app.post('/api/share/event', (req, res) => {
 const mapsGroundingCache = new Map();
 
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
   if (!apiKey) return null;
   return new GoogleGenAI({
     apiKey,
@@ -1737,11 +1738,153 @@ function diceBigramsSimilarity(a, b) {
   return (2.0 * intersection) / (a.length - 1 + (b.length - 1));
 }
 
+const BRAND_TOKENS_SET = new Set([
+  'kobil', 'interpetrol', 'mogas', 'engen', 'total', 'totalenergies', 'delta',
+  'city', 'oil', 'vip', 'king', 'star', 'kimoil', 'safari', 'mega', 'yakeime',
+  'geprotis', 'lybajas', 'petro', 'noe', 'rubis', 'oryx', 'shell', 'hass', 'tanganyika'
+]);
+
+const BUJUMBURA_ZONES_MAP = {
+  rohero: { zone: 'Rohero', commune: 'Mukaza' },
+  'centre ville': { zone: 'Centre-Ville', commune: 'Mukaza' },
+  centre: { zone: 'Centre-Ville', commune: 'Mukaza' },
+  buyenzi: { zone: 'Buyenzi', commune: 'Mukaza' },
+  bwiza: { zone: 'Bwiza', commune: 'Mukaza' },
+  nyakabiga: { zone: 'Nyakabiga', commune: 'Mukaza' },
+  asiatique: { zone: 'Quartier Asiatique', commune: 'Mukaza' },
+  industrielle: { zone: 'Zone Industrielle', commune: 'Mukaza' },
+  brasserie: { zone: 'Zone Industrielle', commune: 'Mukaza' },
+  jabe: { zone: 'Jabe', commune: 'Mukaza' },
+  mpimba: { zone: 'Mpimba', commune: 'Mukaza' },
+  'mutanga sud': { zone: 'Mutanga Sud', commune: 'Mukaza' },
+  mutanga: { zone: 'Mutanga', commune: 'Mukaza' },
+  kinindo: { zone: 'Kinindo', commune: 'Muha' },
+  kibenga: { zone: 'Kibenga', commune: 'Muha' },
+  kanyosha: { zone: 'Kanyosha', commune: 'Muha' },
+  musaga: { zone: 'Musaga', commune: 'Muha' },
+  kinanira: { zone: 'Kinanira', commune: 'Muha' },
+  ruziba: { zone: 'Ruziba', commune: 'Muha' },
+  kizingwe: { zone: 'Kizingwe', commune: 'Muha' },
+  gisyo: { zone: 'Gisyo', commune: 'Muha' },
+  gihosha: { zone: 'Gihosha', commune: 'Ntahangwa' },
+  kamenge: { zone: 'Kamenge', commune: 'Ntahangwa' },
+  ngagara: { zone: 'Ngagara', commune: 'Ntahangwa' },
+  cibitoke: { zone: 'Cibitoke', commune: 'Ntahangwa' },
+  kinama: { zone: 'Kinama', commune: 'Ntahangwa' },
+  buterere: { zone: 'Buterere', commune: 'Ntahangwa' },
+  carama: { zone: 'Carama', commune: 'Ntahangwa' },
+  kigobe: { zone: 'Kigobe', commune: 'Ntahangwa' },
+  kajaga: { zone: 'Kajaga', commune: 'Ntahangwa' },
+  mirango: { zone: 'Mirango', commune: 'Ntahangwa' },
+  maramvya: { zone: 'Maramvya', commune: 'Ntahangwa' },
+  sororezo: { zone: 'Sororezo', commune: 'Mukaza' }
+};
+
+export function inferNewStationMetadata(item = {}) {
+  const rawName = String(item.station_name || '').trim();
+  const rawBrand = String(item.brand || '').trim();
+  const rawZone = String(item.zone || '').trim();
+  const rawCommune = String(item.commune || '').trim();
+  const rawLoc = String(item.location_text || '').trim();
+  const details = String(item.details || '').trim();
+
+  const cleanName = rawName
+    .replace(/^[\s\-•*0-9.)]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const formattedName = cleanName
+    ? cleanName
+        .split(' ')
+        .map(w => (w.length <= 3 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+        .join(' ')
+    : 'Nouvelle Station';
+
+  let detectedBrand = rawBrand || null;
+  if (!detectedBrand) {
+    const lowName = formattedName.toLowerCase();
+    const brandMap = [
+      [/inter\s*petrol|inter\b/i, 'InterPetrol'],
+      [/\bkobil\b/i, 'Kobil'],
+      [/\bmogas\b/i, 'Mogas'],
+      [/\bengen\b/i, 'Engen'],
+      [/\btotal/i, 'TotalEnergies'],
+      [/\bdelta\b/i, 'Delta'],
+      [/city\s*oil/i, 'City Oil'],
+      [/\bvip\b/i, 'VIP'],
+      [/king\s*star/i, 'King Star'],
+      [/\bkimoil\b/i, 'Kimoil'],
+      [/\bsafari\b/i, 'Safari'],
+      [/mega\s*oil/i, 'Mega Oil'],
+      [/\byakeime\b/i, 'Yakeime'],
+      [/\brubis\b/i, 'Rubis'],
+      [/\boryx\b/i, 'Oryx'],
+      [/\bshell\b/i, 'Shell'],
+      [/\bhass\b/i, 'Hass'],
+      [/tanganyika/i, 'Tanganyika Oil']
+    ];
+    for (const [regex, bName] of brandMap) {
+      if (regex.test(lowName)) {
+        detectedBrand = bName;
+        break;
+      }
+    }
+  }
+
+  let detectedZone = rawZone || '';
+  let detectedCommune = ['Mukaza', 'Ntahangwa', 'Muha'].includes(rawCommune) ? rawCommune : '';
+
+  const searchCorpus = `${rawZone} ${formattedName} ${rawLoc} ${details}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  for (const [key, info] of Object.entries(BUJUMBURA_ZONES_MAP)) {
+    const reg = new RegExp(`\\b${key}\\b`, 'i');
+    if (reg.test(searchCorpus)) {
+      if (!detectedZone) detectedZone = info.zone;
+      if (!detectedCommune) detectedCommune = info.commune;
+      break;
+    }
+  }
+
+  if (!detectedZone) {
+    const nonBrandWords = formattedName
+      .split(/\s+/)
+      .filter(w => !BRAND_TOKENS_SET.has(w.toLowerCase()) && !/^(station|service|essence|mazout)$/i.test(w));
+    detectedZone = nonBrandWords.length > 0 ? nonBrandWords[nonBrandWords.length - 1] : 'Bujumbura';
+  }
+  if (!detectedCommune) {
+    const zLow = detectedZone.toLowerCase();
+    if (BUJUMBURA_ZONES_MAP[zLow]) {
+      detectedCommune = BUJUMBURA_ZONES_MAP[zLow].commune;
+    } else {
+      detectedCommune = 'Mukaza';
+    }
+  }
+
+  const locationText = rawLoc || `Quartier ${detectedZone}, Commune ${detectedCommune}, Bujumbura`;
+
+  return {
+    name: formattedName,
+    brand: detectedBrand,
+    zone: detectedZone,
+    commune: detectedCommune,
+    location_text: locationText,
+    landmark: details ? details.slice(0, 120) : null,
+    fuels: 'Essence,Diesel'
+  };
+}
+
 export function matchStationFuzzy(extractedName, stationList = stations, threshold = 0.52) {
   const queryNorm = normalizeStationText(extractedName);
   if (!queryNorm) return { station: null, score: 0 };
 
-  const queryTokens = new Set(queryNorm.split(' ').filter(Boolean));
+  const queryTokensArr = queryNorm.split(' ').filter(Boolean);
+  const queryTokens = new Set(queryTokensArr);
+  const brandQueryTokens = queryTokensArr.filter(t => BRAND_TOKENS_SET.has(t));
+  const specificQueryTokens = queryTokensArr.filter(t => !BRAND_TOKENS_SET.has(t));
+
   let bestStation = null;
   let bestScore = 0;
 
@@ -1757,7 +1900,8 @@ export function matchStationFuzzy(extractedName, stationList = stations, thresho
     }
 
     const candMainTokens = new Set(`${nameNorm} ${zoneNorm}`.split(' ').filter(Boolean));
-    const candAllTokens = new Set(`${nameNorm} ${brandNorm} ${zoneNorm} ${landmarkNorm}`.split(' ').filter(Boolean));
+    const candAllTokensArr = `${nameNorm} ${brandNorm} ${zoneNorm} ${landmarkNorm}`.split(' ').filter(Boolean);
+    const candAllTokens = new Set(candAllTokensArr);
 
     let overlapMainCount = 0;
     let overlapAllCount = 0;
@@ -1783,6 +1927,36 @@ export function matchStationFuzzy(extractedName, stationList = stations, thresho
       const landmarkMatched = landmarkNorm && landmarkNorm.split(' ').some(l => l && queryTokens.has(l));
       if (zoneMatched || landmarkMatched) {
         score = Math.max(score, 0.92);
+      }
+    }
+
+    // Règle 1 : Si la requête mentionne une marque (ex: "Tanganyika Ruziba"), elle ne doit pas
+    // être confondue avec une station d'une autre marque dans le même quartier (ex: "Noe Ruziba")
+    if (brandQueryTokens.length > 0) {
+      const brandMatched = brandQueryTokens.some(bt => candAllTokens.has(bt));
+      if (!brandMatched) {
+        score = Math.min(score, 0.35);
+      }
+    }
+
+    // Règle 2 : Si la requête précise un lieu/quartier/identifiant spécifique (ex: "Kobil Gihosha")
+    // tous les tokens spécifiques doivent correspondre à la station candidate
+    if (specificQueryTokens.length > 0) {
+      let matchedSpecificCount = 0;
+      for (const sqt of specificQueryTokens) {
+        let tokenMatched = candAllTokens.has(sqt);
+        if (!tokenMatched) {
+          for (const ct of candAllTokensArr) {
+            if (!BRAND_TOKENS_SET.has(ct) && diceBigramsSimilarity(sqt, ct) >= 0.75) {
+              tokenMatched = true;
+              break;
+            }
+          }
+        }
+        if (tokenMatched) matchedSpecificCount++;
+      }
+      if (matchedSpecificCount < specificQueryTokens.length) {
+        score = Math.min(score, 0.35);
       }
     }
 
@@ -1829,35 +2003,60 @@ function inferBotQueueStatus(details) {
 
 function fallbackParseWhatsAppText(rawText) {
   if (!rawText) return [];
-  const lines = String(rawText)
+  const rawLines = String(rawText)
     .split(/\r?\n/)
-    .map(l => l.replace(/^[\s\-•*0-9.)]+/, '').trim())
+    .map(l => l.trim())
     .filter(Boolean);
 
   let currentFuel = 'unspecified';
   const items = [];
 
-  for (const line of lines) {
+  for (const rawLine of rawLines) {
+    const hadBulletOrNumber = /^[\s\-•*0-9.)]+/.test(rawLine);
+    const line = rawLine.replace(/^[\s\-•*0-9.)]+/, '').trim();
+    if (!line || line.length < 3) continue;
+
     const low = line.toLowerCase();
-    if (line.length < 30 && /essence|mazout|gasoil|diesel/.test(low) && line.includes(':')) {
-      currentFuel = normalizeBotFuelType(low);
+
+    // Ignorer les titres génériques de fiches
+    if (/^(fiche|liste|communiqu|republique|ministere|bujumbura le|date\b|nb\b|total\s*:)/i.test(low) && !/station|kobil|interpetrol|mogas|engen|delta/i.test(low)) {
       continue;
     }
 
-    const headPart = line.split(/[:\-–—(]/)[0].trim();
-    const matchHead = matchStationFuzzy(headPart, stations, 0.48);
-    const matchFull = matchStationFuzzy(line, stations, 0.48);
-    const bestMatch = matchHead.score >= matchFull.score ? matchHead : matchFull;
-    const hasBrandKeyword = /kobil|interpetrol|inter\b|mogas|engen|total|delta|city oil|vip|king star|kimoil|safari|mega oil|yakeime|geprotis|lybajas|petro muha|noe/i.test(low);
+    if (line.length < 35 && /essence|mazout|gasoil|diesel/.test(low) && (line.endsWith(':') || !/[-–—]/.test(line))) {
+      currentFuel = normalizeBotFuelType(low);
+      if (line.endsWith(':') || line.split(/\s+/).length <= 3) {
+        continue;
+      }
+    }
 
-    if (bestMatch.station || hasBrandKeyword) {
+    const headPart = line.split(/[:\-–—(|]/)[0].trim();
+    if (!headPart || headPart.length < 2) continue;
+
+    const matchHead = matchStationFuzzy(headPart, stations, 0.52);
+    const matchFull = matchStationFuzzy(line, stations, 0.52);
+    const bestMatch = matchHead.score >= matchFull.score ? matchHead : matchFull;
+
+    const hasBrandKeyword = /kobil|interpetrol|inter\b|mogas|engen|total|delta|city oil|vip|king star|kimoil|safari|mega oil|yakeime|geprotis|lybajas|petro|noe|rubis|oryx|shell|hass|tanganyika|station/i.test(low);
+    const hasZoneKeyword = Object.keys(BUJUMBURA_ZONES_MAP).some(z => new RegExp(`\\b${z}\\b`, 'i').test(low));
+    const hasSeparatorWithFuel = /[:\-–—|]/.test(line) && /essence|mazout|gasoil|diesel|dispo|sec|carburant|file|depotage/i.test(low);
+
+    if (bestMatch.station || hasBrandKeyword || hasZoneKeyword || hasSeparatorWithFuel || hadBulletOrNumber) {
       let fuel = normalizeBotFuelType(low);
       if (fuel === 'unspecified') {
         fuel = currentFuel !== 'unspecified' ? currentFuel : 'both';
       }
       const status = normalizeBotStatus(low);
+      const inferred = inferNewStationMetadata({
+        station_name: headPart || line,
+        details: line
+      });
       items.push({
         station_name: headPart || line,
+        brand: inferred.brand,
+        zone: inferred.zone,
+        commune: inferred.commune,
+        location_text: inferred.location_text,
         fuel_type: fuel,
         status,
         details: line
@@ -1867,74 +2066,155 @@ function fallbackParseWhatsAppText(rawText) {
   return items;
 }
 
+async function runRealOpticalOcr(cleanBase64) {
+  if (!cleanBase64) return '';
+  try {
+    const imgBuffer = Buffer.from(cleanBase64, 'base64');
+    const result = await Tesseract.recognize(imgBuffer, 'fra');
+    return String(result?.data?.text || '').trim();
+  } catch (err) {
+    console.warn('[Telegram OCR] Erreur Tesseract :', err.message);
+    return '';
+  }
+}
+
 async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mimeType = 'image/jpeg' }) {
   const ai = getGeminiClient();
+  const cleanBase64 = String(imageBase64 || '')
+    .replace(/^data:[^;]+;base64,/, '')
+    .replace(/\s+/g, '')
+    .trim();
+
   const catalog = stations
     .filter(s => s.is_active)
-    .map(s => `${s.name} (${s.zone})`)
-    .join(', ');
+    .map(s => `${s.name} (Quartier: ${s.zone}, Commune: ${s.commune})`)
+    .join(' ; ');
 
   const systemInstruction =
-    `Tu es l'assistant d'extraction de données d'Igitoro Live à Bujumbura (Burundi). ` +
-    `Analyse le message texte (souvent transféré de WhatsApp) ou l'image (fiche de distribution de carburant) ` +
-    `et retourne un tableau JSON strict d'objets contenant : station_name, fuel_type ('essence', 'mazout', 'both', 'unspecified'), ` +
-    `status ('distribution', 'starting', 'no_fuel', 'unknown'), et details.\n` +
-    `Catalogue officiel des stations de Bujumbura : ${catalog}.`;
+    `Tu es le moteur de Vision IA et d'extraction d'Igitoro Live à Bujumbura (Burundi).\n` +
+    `Ta mission :\n` +
+    `1. Si une image est fournie, déchiffre RÉELLEMENT et intégralement tout le texte, toutes les lignes et toutes les stations écrites sur l'image et place cette transcription dans "transcribed_text".\n` +
+    `2. Extrais TOUTES les stations-service mentionnées dans l'image ou le texte, MÊME SI elles ne figurent pas encore dans le catalogue officiel (car le système va créer automatiquement les nouvelles stations dans la base de données après confirmation de l'administrateur).\n` +
+    `3. Pour chaque station détectée, renseigne :\n` +
+    `   - station_name : nom complet de la station tel que lu (ex: "Kobil Gihosha", "InterPetrol Brasserie", "Station Tanganyika Ruziba")\n` +
+    `   - brand : marque de la station si identifiable (ex: "Kobil", "InterPetrol", "Mogas", "Engen", "TotalEnergies", "Delta", "City Oil", "Rubis", etc., sinon "")\n` +
+    `   - zone : quartier ou zone à Bujumbura (ex: "Gihosha", "Kinindo", "Rohero", "Ruziba", "Kajaga", "Kamenge", "Mutanga", "Ngagara", etc.)\n` +
+    `   - commune : commune de Bujumbura ("Mukaza", "Ntahangwa" ou "Muha")\n` +
+    `   - location_text : avenue, route ou adresse lue sur l'image (sinon "Quartier <zone>, Bujumbura")\n` +
+    `   - fuel_type : 'essence', 'mazout', 'both' ou 'unspecified'\n` +
+    `   - status : 'distribution', 'starting', 'no_fuel' ou 'unknown'\n` +
+    `   - details : détails exacts lus sur la ligne (type de carburant, file d'attente, observations).\n` +
+    `Catalogue actuel des stations déjà enregistrées (à titre de référence uniquement, n'ignore JAMAIS une station absente de cette liste) : ${catalog}.`;
 
-  if (ai && (rawText || imageBase64)) {
+  if (ai && (rawText || cleanBase64)) {
     const parts = [];
-    if (imageBase64) {
+    if (cleanBase64) {
       parts.push({
         inlineData: {
-          mimeType: mimeType || 'image/jpeg',
-          data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
+          mimeType: mimeType && mimeType.startsWith('image/') ? mimeType : 'image/jpeg',
+          data: cleanBase64
         }
       });
     }
     if (rawText) {
-      parts.push({ text: `Message à analyser :\n${rawText}` });
-    } else if (imageBase64) {
-      parts.push({ text: 'Extrais toutes les stations-service et carburants de cette fiche de distribution à Bujumbura.' });
+      parts.push({
+        text: cleanBase64
+          ? `Déchiffre toute l'image ci-jointe ainsi que cette légende :\n${rawText}\nExtrais toutes les stations (existantes ET nouvelles).`
+          : `Analyse ce message et extrais toutes les stations (existantes ET nouvelles) :\n${rawText}`
+      });
+    } else if (cleanBase64) {
+      parts.push({
+        text: 'Lis attentivement cette image. Transcris le texte lu dans transcribed_text et extrais toutes les stations-service visibles (qu\'elles soient déjà dans le catalogue ou qu\'il s\'agisse de nouvelles stations à créer).'
+      });
     }
 
-    for (const modelName of ['gemini-3.8-flash', 'gemini-flash-latest']) {
+    for (const modelName of ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.1-flash-lite']) {
       try {
         const resp = await ai.models.generateContent({
           model: modelName,
-          contents: { parts },
+          contents: [{ role: 'user', parts }],
           config: {
             systemInstruction,
             temperature: 0.1,
             responseMimeType: 'application/json',
             responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  station_name: { type: Type.STRING },
-                  fuel_type: { type: Type.STRING },
-                  status: { type: Type.STRING },
-                  details: { type: Type.STRING }
+              type: Type.OBJECT,
+              properties: {
+                transcribed_text: {
+                  type: Type.STRING,
+                  description: 'Texte exact déchiffré sur l\'image ou résumé fidèle de ce qui est lu.'
                 },
-                required: ['station_name', 'fuel_type', 'status', 'details']
-              }
+                stations: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      station_name: { type: Type.STRING },
+                      brand: { type: Type.STRING },
+                      zone: { type: Type.STRING },
+                      commune: { type: Type.STRING },
+                      location_text: { type: Type.STRING },
+                      fuel_type: { type: Type.STRING },
+                      status: { type: Type.STRING },
+                      details: { type: Type.STRING }
+                    },
+                    required: ['station_name', 'fuel_type', 'status', 'details']
+                  }
+                }
+              },
+              required: ['transcribed_text', 'stations']
             }
           }
         });
-        const parsed = JSON.parse((resp.text || '[]').trim());
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(x => ({
-            station_name: String(x.station_name || '').trim(),
-            fuel_type: normalizeBotFuelType(x.fuel_type),
-            status: normalizeBotStatus(x.status),
-            details: String(x.details || '').trim()
-          }));
+
+        const parsed = JSON.parse((resp.text || '{}').trim());
+        const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.stations) ? parsed.stations : [];
+        const transcribedText = typeof parsed.transcribed_text === 'string' ? parsed.transcribed_text.trim() : '';
+
+        if (list.length > 0) {
+          const items = list.map(x => {
+            const inferred = inferNewStationMetadata(x);
+            return {
+              station_name: String(x.station_name || inferred.name).trim(),
+              brand: String(x.brand || inferred.brand || '').trim() || null,
+              zone: String(x.zone || inferred.zone || 'Bujumbura').trim(),
+              commune: String(x.commune || inferred.commune || 'Mukaza').trim(),
+              location_text: String(x.location_text || inferred.location_text).trim(),
+              fuel_type: normalizeBotFuelType(x.fuel_type),
+              status: normalizeBotStatus(x.status),
+              details: String(x.details || '').trim()
+            };
+          });
+          items._meta = {
+            engine: cleanBase64 ? `Gemini Vision IA (${modelName})` : `Gemini IA (${modelName})`,
+            deciphered_text: transcribedText || items.map(i => `${i.station_name} (${i.fuel_type})`).join(' | ')
+          };
+          return items;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn(`[Telegram Vision] Modèle ${modelName} indisponible :`, err.message);
+      }
     }
   }
 
-  return fallbackParseWhatsAppText(rawText);
+  // Si une image a été envoyée mais que Gemini Vision n'est pas configuré ou a échoué,
+  // exécuter une lecture optique réelle des pixels (OCR Tesseract.js) !
+  let ocrText = '';
+  if (cleanBase64) {
+    ocrText = await runRealOpticalOcr(cleanBase64);
+  }
+
+  const combinedText = [ocrText, rawText].filter(Boolean).join('\n');
+  const fallbackItems = fallbackParseWhatsAppText(combinedText);
+  fallbackItems._meta = {
+    engine: cleanBase64
+      ? ocrText
+        ? 'OCR Optique Réel (Tesseract)'
+        : 'Aucun moteur Vision actif (vérifiez GEMINI_API_KEY)'
+      : 'Analyseur Heuristique Texte',
+    deciphered_text: ocrText
+  };
+  return fallbackItems;
 }
 
 async function sendTelegramApi(method, payload) {
@@ -2053,10 +2333,21 @@ function buildTelegramStatsSummary() {
   );
 }
 
+function escapeTelegramHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw }) {
   const enrichedItems = [];
   let matchedCount = 0;
-  let unmatchedCount = 0;
+  let newStationsCount = 0;
+
+  const meta = (extractedRaw && extractedRaw._meta) || {};
+  const engineLabel = meta.engine || (sourceType === 'image' ? 'Vision IA' : 'Analyse Texte');
+  const decipheredText = String(meta.deciphered_text || '').trim();
 
   const fuelLabels = {
     essence: '⛽ Essence',
@@ -2073,9 +2364,15 @@ function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw
 
   const lines = [
     '🤖 <b>PRÉ-VALIDATION IGITORO LIVE</b>',
-    `📥 Source : <i>${sourceType === 'image' ? 'Photo / Fiche de distribution' : 'Message texte / WhatsApp'}</i>`,
-    ''
+    `📥 <b>Source :</b> <i>${sourceType === 'image' ? 'Photo / Fiche de distribution' : 'Message texte / WhatsApp'}</i>`,
+    `🧠 <b>Moteur de lecture :</b> <code>${escapeTelegramHtml(engineLabel)}</code>`
   ];
+
+  if (sourceType === 'image' && decipheredText) {
+    const previewOcr = decipheredText.length > 350 ? decipheredText.slice(0, 350) + '…' : decipheredText;
+    lines.push(`👁️ <b>Ce que j'ai lu sur l'image :</b>\n<pre>${escapeTelegramHtml(previewOcr)}</pre>`);
+  }
+  lines.push('');
 
   extractedRaw.forEach((item, idx) => {
     const rawName = String(item.station_name || '').trim();
@@ -2088,48 +2385,67 @@ function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw
       matchedCount++;
       enrichedItems.push({
         station_id: matchedSt.id,
+        will_create_station: false,
         station_name: rawName,
         matched_name: matchedSt.name,
         zone: matchedSt.zone,
+        commune: matchedSt.commune,
+        brand: matchedSt.brand,
         confidence: score,
         fuel_type: fuelType,
         status,
         details
       });
       lines.push(
-        `${idx + 1}. ✅ <b>${matchedSt.name}</b> (${matchedSt.zone}) — <i>${Math.round(score * 100)}%</i>\n` +
-          `   • ${stLabels[status] || status} | ${fuelLabels[fuelType] || fuelType}` +
-          (details ? `\n   • 📝 ${details}` : '')
+        `${idx + 1}. ✅ <b>[Station existante] ${escapeTelegramHtml(matchedSt.name)}</b> (${escapeTelegramHtml(matchedSt.zone)}) — <i>${Math.round(score * 100)}%</i>\n` +
+          `   • Action : Mettre à jour (${stLabels[status] || status} | ${fuelLabels[fuelType] || fuelType})` +
+          (details ? `\n   • 📝 <i>${escapeTelegramHtml(details)}</i>` : '')
       );
     } else {
-      unmatchedCount++;
+      newStationsCount++;
+      const proposed = inferNewStationMetadata(item);
       enrichedItems.push({
         station_id: null,
+        will_create_station: true,
+        proposed_station: proposed,
         station_name: rawName,
-        matched_name: null,
-        zone: null,
+        matched_name: proposed.name,
+        zone: proposed.zone,
+        commune: proposed.commune,
+        brand: proposed.brand,
+        location_text: proposed.location_text,
         confidence: score,
         fuel_type: fuelType,
         status,
         details
       });
-      lines.push(`${idx + 1}. ⚠️ <b>Station non reconnue :</b> « ${rawName} » <i>(ignorée si confirmé)</i>`);
+      lines.push(
+        `${idx + 1}. 🆕 <b>[Nouvelle station à créer] ${escapeTelegramHtml(proposed.name)}</b>\n` +
+          `   • 📍 Quartier : <b>${escapeTelegramHtml(proposed.zone)}</b> (${escapeTelegramHtml(proposed.commune)}) | Marque : <b>${escapeTelegramHtml(proposed.brand || 'Indépendante')}</b>\n` +
+          `   • ⚡ Action : <b>Créer dans la BDD</b> + publier (${stLabels[status] || status} | ${fuelLabels[fuelType] || fuelType})` +
+          (details ? `\n   • 📝 <i>${escapeTelegramHtml(details)}</i>` : '')
+      );
     }
   });
 
   lines.push('');
   lines.push(
-    `📊 <b>Bilan :</b> ${matchedCount} station(s) reconnue(s)` +
-      (unmatchedCount ? `, ${unmatchedCount} non reconnue(s)` : '') +
-      '.'
+    `📊 <b>Ce que je vais envoyer dans la base de données si vous confirmez :</b>\n` +
+      `• 🔄 <b>${matchedCount}</b> station(s) existante(s) à mettre à jour\n` +
+      `• 🆕 <b>${newStationsCount}</b> nouvelle(s) station(s) à créer automatiquement`
   );
-  lines.push("🔒 <i>Aucune donnée n'est écrite en production tant que vous n'avez pas confirmé.</i>");
+  lines.push("🔒 <i>Aucune donnée n'est écrite en production tant que vous n'avez pas cliqué sur Confirmer.</i>");
 
   const batchId = crypto.randomBytes(8).toString('hex');
+  const confirmBtnText =
+    newStationsCount > 0
+      ? `✅ Confirmer (${matchedCount} MàJ + ${newStationsCount} création${newStationsCount > 1 ? 's' : ''})`
+      : '✅ Confirmer la mise à jour';
+
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '✅ Confirmer la mise à jour', callback_data: `confirm_batch:${batchId}` },
+        { text: confirmBtnText, callback_data: `confirm_batch:${batchId}` },
         { text: '❌ Annuler', callback_data: `cancel_batch:${batchId}` }
       ]
     ]
@@ -2139,6 +2455,8 @@ function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw
     id: batchId,
     chat_id: String(chatId || 'admin'),
     source_type: sourceType,
+    engine: engineLabel,
+    deciphered_text: decipheredText,
     raw_input: String(rawInput || '').slice(0, 4000),
     extracted_items: enrichedItems,
     status: 'pending',
@@ -2155,10 +2473,10 @@ function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw
 function executeBatchConfirmation(batchId) {
   const batch = telegramPendingBatches.get(batchId);
   if (!batch) {
-    return { ok: false, inserted: 0, message: '⚠️ Lot introuvable ou expiré.' };
+    return { ok: false, inserted: 0, created_stations_count: 0, message: '⚠️ Lot introuvable ou expiré.' };
   }
   if (batch.status !== 'pending') {
-    return { ok: false, inserted: 0, message: `ℹ️ Ce lot a déjà été traité (statut : ${batch.status}).` };
+    return { ok: false, inserted: 0, created_stations_count: 0, message: `ℹ️ Ce lot a déjà été traité (statut : ${batch.status}).` };
   }
 
   let adminUser = users.find(u => u.is_admin);
@@ -2178,14 +2496,61 @@ function executeBatchConfirmation(batchId) {
   }
 
   let inserted = 0;
+  let createdStationsCount = 0;
   const updatedNames = [];
+  const createdStationNames = [];
   const nowIso = new Date().toISOString();
 
   for (const item of batch.extracted_items) {
-    if (!item.station_id) continue;
+    let targetStationId = item.station_id;
+
+    // Si la station n'existait pas dans la BDD, on la crée maintenant après confirmation de l'admin !
+    if (!targetStationId && item.will_create_station && item.proposed_station) {
+      const prop = item.proposed_station;
+      // Vérifier si elle vient d'être créée dans ce même lot
+      const existingNow = matchStationFuzzy(prop.name, stations, 0.82);
+      if (existingNow.station) {
+        targetStationId = existingNow.station.id;
+        item.station_id = targetStationId;
+      } else {
+        const newStation = {
+          id: nextStationId++,
+          name: prop.name,
+          brand: prop.brand || null,
+          commune: prop.commune || 'Mukaza',
+          zone: prop.zone || 'Bujumbura',
+          location_text: prop.location_text || `Quartier ${prop.zone || 'Bujumbura'}, Bujumbura`,
+          landmark: prop.landmark || null,
+          fuels: prop.fuels || 'Essence,Diesel',
+          is_active: true,
+          is_verified: true,
+          verified_label: 'Créée via Bot Telegram Admin',
+          created_at: nowIso
+        };
+        stations.push(newStation);
+        targetStationId = newStation.id;
+        item.station_id = newStation.id;
+        createdStationsCount++;
+        createdStationNames.push(`${newStation.name} (${newStation.zone})`);
+
+        actionLogs.push({
+          id: actionLogs.length + 1,
+          admin_id: adminUser.id,
+          admin_name: adminUser.name,
+          action: 'Nouvelle station créée via Bot Telegram',
+          target_type: 'station',
+          target_id: newStation.id,
+          details: `${newStation.name} — Quartier ${newStation.zone} (${newStation.commune})`,
+          created_at: nowIso
+        });
+      }
+    }
+
+    if (!targetStationId) continue;
+
     reports.push({
       id: nextReportId++,
-      station_id: item.station_id,
+      station_id: targetStationId,
       user_id: adminUser.id,
       fuel_status: item.status || 'distribution',
       fuel_type: item.fuel_type || 'unspecified',
@@ -2199,7 +2564,7 @@ function executeBatchConfirmation(batchId) {
       created_at: nowIso
     });
     inserted++;
-    updatedNames.push(item.matched_name || `Station #${item.station_id}`);
+    updatedNames.push(item.matched_name || `Station #${targetStationId}`);
   }
 
   batch.status = 'confirmed';
@@ -2212,16 +2577,27 @@ function executeBatchConfirmation(batchId) {
     action: `Bot Telegram : Lot ${batchId} confirmé`,
     target_type: 'telegram_batch',
     target_id: batchId,
-    details: `${inserted} signalement(s) publié(s) : ${updatedNames.join(', ')}`,
+    details: `${createdStationsCount} nouvelle(s) station(s) créée(s), ${inserted} signalement(s) publié(s) : ${updatedNames.join(', ')}`,
     created_at: nowIso
   });
 
-  const message =
-    `✅ <b>Mise à jour publiée en production !</b>\n` +
-    `• <b>${inserted}</b> signalement(s) enregistré(s) dans la base de données.\n` +
-    `• Stations mises à jour : ${updatedNames.length ? updatedNames.join(', ') : 'Aucune'}`;
+  const msgLines = [
+    `✅ <b>Mise à jour publiée en production !</b>`,
+    `• 📝 <b>${inserted}</b> signalement(s) enregistré(s) dans la base de données.`
+  ];
+  if (createdStationsCount > 0) {
+    msgLines.push(`• 🆕 <b>${createdStationsCount} nouvelle(s) station(s) créée(s) :</b> ${escapeTelegramHtml(createdStationNames.join(', '))}`);
+  }
+  msgLines.push(`• ⛽ <b>Stations mises à jour :</b> ${updatedNames.length ? escapeTelegramHtml(updatedNames.join(', ')) : 'Aucune'}`);
 
-  return { ok: true, inserted, updated_stations: updatedNames, message };
+  return {
+    ok: true,
+    inserted,
+    created_stations_count: createdStationsCount,
+    created_stations: createdStationNames,
+    updated_stations: updatedNames,
+    message: msgLines.join('\n')
+  };
 }
 
 function executeBatchCancellation(batchId) {
@@ -2270,7 +2646,9 @@ app.post('/api/telegram/webhook', async (req, res) => {
       if (cbId) {
         await sendTelegramApi('answerCallbackQuery', {
           callback_query_id: cbId,
-          text: result.ok ? `✅ ${result.inserted} signalement(s) publié(s) !` : result.message
+          text: result.ok
+            ? `✅ ${result.inserted} signalement(s) et ${result.created_stations_count || 0} nouvelle(s) station(s) !`
+            : result.message
         });
       }
       if (chatId && messageId) {
@@ -2286,6 +2664,9 @@ app.post('/api/telegram/webhook', async (req, res) => {
         action: 'confirmed',
         batch_id: batchId,
         inserted: result.inserted,
+        created_stations_count: result.created_stations_count || 0,
+        created_stations: result.created_stations || [],
+        updated_stations: result.updated_stations || [],
         message: result.message
       });
     }
@@ -2342,6 +2723,10 @@ app.post('/api/telegram/webhook', async (req, res) => {
     const downloaded = await downloadTelegramPhotoBase64(largestPhoto.file_id);
     imageBase64 = downloaded.base64;
     mimeType = downloaded.mimeType;
+  } else if (!imageBase64 && message.document && String(message.document.mime_type || '').startsWith('image/')) {
+    const downloaded = await downloadTelegramPhotoBase64(message.document.file_id);
+    imageBase64 = downloaded.base64;
+    mimeType = message.document.mime_type || downloaded.mimeType;
   }
 
   if (text.startsWith('/stats') || text.startsWith('/bilan') || text.startsWith('/health')) {
@@ -2403,6 +2788,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
     ok: true,
     action: 'pending_validation',
     batch_id: batch.id,
+    engine: batch.engine,
+    deciphered_text: batch.deciphered_text,
     extracted_items: batch.extracted_items,
     summary: batch.summary_html,
     reply_markup: batch.reply_markup
