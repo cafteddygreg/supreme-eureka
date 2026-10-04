@@ -476,6 +476,31 @@ async function runTests() {
     assert.strictEqual(stData.is_verified, true);
   });
 
+  await test('POST /api/admin/stations ajoute une nouvelle station officielle pour l’administrateur', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/stations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Cookie': adminCookie
+      },
+      body: JSON.stringify({
+        name: 'Station Test Admin Kiriri',
+        brand: 'Kobil',
+        commune: 'Mukaza',
+        zone: 'Kiriri',
+        location_text: 'Avenue de l’Université',
+        landmark: 'Près du campus',
+        fuels: 'Essence,Diesel'
+      })
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert(data.ok);
+    assert.strictEqual(data.station.name, 'Station Test Admin Kiriri');
+    assert.strictEqual(data.station.is_verified, true);
+  });
+
   await test('POST /api/admin/stations/:id/toggle bascule l’état actif/inactif', async () => {
     const res = await fetch(`${BASE_URL}/api/admin/stations/2/toggle`, {
       method: 'POST',

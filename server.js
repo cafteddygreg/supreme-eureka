@@ -3,6 +3,7 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import crypto from 'crypto';
+import zlib from 'zlib';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -52,7 +53,51 @@ const upload = multer({
 // Middleware
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
-app.use('/static', express.static(path.join(__dirname, 'static')));
+
+// Compression Gzip native pour accélérer l'ouverture sur réseau mobile (réduit la taille HTML/JSON de ~80%)
+app.use((req, res, next) => {
+  const acceptEncoding = req.headers['accept-encoding'] || '';
+  if (!acceptEncoding.includes('gzip') || req.path.startsWith('/static/icons/') || req.path.startsWith('/static/uploads/')) {
+    return next();
+  }
+  const origSend = res.send.bind(res);
+  res.send = function (body) {
+    if (res.headersSent) return origSend(body);
+    const contentType = String(res.getHeader('Content-Type') || '');
+    const isCompressible =
+      typeof body === 'string' ||
+      contentType.includes('text/') ||
+      contentType.includes('application/json') ||
+      contentType.includes('application/javascript');
+    const buf = Buffer.isBuffer(body) ? body : (typeof body === 'string' ? Buffer.from(body, 'utf8') : null);
+    if (isCompressible && buf && buf.length > 512) {
+      try {
+        const compressed = zlib.gzipSync(buf, { level: zlib.constants.Z_BEST_SPEED });
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Vary', 'Accept-Encoding');
+        res.removeHeader('Content-Length');
+        return origSend(compressed);
+      } catch (_) {}
+    }
+    return origSend(body);
+  };
+  next();
+});
+
+app.use(
+  '/static',
+  express.static(path.join(__dirname, 'static'), {
+    maxAge: '7d',
+    etag: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.includes('uploads')) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+      }
+    }
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -275,7 +320,13 @@ function shouldGrantAdmin(sub, email) {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
-  const adminEmails = (process.env.ADMIN_EMAILS || 'bagloriose18@gmail.com')
+  const rawAdminEmails = [
+    process.env.ADMIN_EMAIL || '',
+    process.env.ADMIN_EMAILS || '',
+    'bagloriose18@gmail.com',
+    'tedd@example.bi'
+  ].join(',');
+  const adminEmails = rawAdminEmails
     .split(',')
     .map(s => s.trim().toLowerCase())
     .filter(Boolean);
@@ -1368,13 +1419,13 @@ app.post('/api/admin/stations', requireAdmin, (req, res) => {
 
   const s = {
     id: nextStationId++,
-    name: payload.name.trim(),
-    brand: payload.brand ? payload.brand.trim() : null,
-    commune: payload.commune ? payload.commune.trim() : 'Mukaza',
-    zone: payload.zone.trim(),
-    location_text: payload.location_text.trim(),
-    landmark: payload.landmark ? payload.landmark.trim() : null,
-    fuels: payload.fuels ? payload.fuels.trim() : 'Essence,Diesel',
+    name: String(payload.name).trim(),
+    brand: payload.brand ? String(payload.brand).trim() : null,
+    commune: payload.commune ? String(payload.commune).trim() : 'Mukaza',
+    zone: String(payload.zone).trim(),
+    location_text: String(payload.location_text).trim(),
+    landmark: payload.landmark ? String(payload.landmark).trim() : null,
+    fuels: payload.fuels ? String(payload.fuels).trim() : 'Essence,Diesel',
     is_active: true,
     is_verified: true,
     verified_label: 'Créée par l\'administration',
@@ -1383,6 +1434,11 @@ app.post('/api/admin/stations', requireAdmin, (req, res) => {
 
   stations.push(s);
   logAction(req, 'Station officielle ajoutée', 'station', s.id, `${s.name} (${s.zone})`);
+
+  const acceptsJson = (req.headers.accept || '').includes('application/json') || req.is('application/json');
+  if (!acceptsJson) {
+    return res.redirect('/admin');
+  }
   res.json({ ok: true, station: s });
 });
 

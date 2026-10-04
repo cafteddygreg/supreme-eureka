@@ -48,7 +48,7 @@
   }
   </script>
 
-  <link rel="manifest" href="/static/manifest.json?v=2">
+  <link rel="manifest" href="/static/manifest.json?v=3">
   <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg?v=2">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=2">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-180.png?v=2">
@@ -57,8 +57,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Igitoro">
-  <link rel="stylesheet" href="/static/css/app.css">
-  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+
+  <!-- Préchargement du CSS principal et chargement asynchrone non-bloquant des polices -->
+  <link rel="preload" href="/static/css/app.css?v=3" as="style">
+  <link rel="stylesheet" href="/static/css/app.css?v=3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'">
 </head>
 <body>
   <header class="app-header">
@@ -76,16 +81,16 @@
 
       <nav class="desktop-nav" aria-label="Navigation principale">
         <a href="/" class="nav-link">Stations</a>
-        <a href="/notifications" class="nav-link">Alertes</a>
         <a href="/partager" class="nav-link">🤝 Partager</a>
-        <a href="/profil" class="nav-link">Profil</a>
-        <% if (typeof user !== 'undefined' && user && user.is_admin) { %>
-          <a href="/admin" class="nav-link" style="color: #FBD368; font-weight: 700;">Admin</a>
-        <% } %>
         <a href="/signaler" class="nav-btn-cta">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           <span>Signaler</span>
         </a>
+        <a href="/notifications" class="nav-link">Alertes</a>
+        <a href="/profil" class="nav-link">Profil</a>
+        <% if (typeof user !== 'undefined' && user && user.is_admin) { %>
+          <a href="/admin" class="nav-link" style="color: #FBD368; font-weight: 700;">Admin</a>
+        <% } %>
       </nav>
     </div>
   </header>

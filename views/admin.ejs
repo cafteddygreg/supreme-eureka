@@ -38,19 +38,21 @@
 </div>
 
 <!-- ================= ONGLETS D'ADMINISTRATION ================= -->
+<div id="admin-feedback-banner" class="card hidden" style="margin-bottom: 16px; padding: 12px 16px; border-left: 4px solid var(--emerald-600); font-weight: 600;"></div>
+
 <div class="chips admin-tabs" style="margin-bottom: 20px; border-bottom: 1px solid var(--line); padding-bottom: 8px;">
-  <button type="button" class="chip selected admin-tab-btn" onclick="showAdminTab('stations')">Stations (<%= stations.length %>)</button>
-  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('claims')">Revendications (<%= claims.filter(c => c.status === 'pending').length %>)</button>
-  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('abuse')">Modération Abus (<%= abuseList.filter(a => a.status === 'pending').length %>)</button>
-  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('users')">Utilisateurs (<%= userList.length %>)</button>
-  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('logs')">Journal d'actions</button>
+  <button type="button" class="chip selected admin-tab-btn" onclick="showAdminTab('stations', this)">Stations (<%= stations.length %>)</button>
+  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('claims', this)">Revendications (<%= claims.filter(c => c.status === 'pending').length %>)</button>
+  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('abuse', this)">Modération Abus (<%= abuseList.filter(a => a.status === 'pending').length %>)</button>
+  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('users', this)">Utilisateurs (<%= userList.length %>)</button>
+  <button type="button" class="chip admin-tab-btn" onclick="showAdminTab('logs', this)">Journal d'actions</button>
 </div>
 
 <!-- ================= SECTION 1 : GESTION DES STATIONS ================= -->
 <div id="tab-stations" class="admin-section">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
     <h2 style="margin: 0; font-size: 1.25rem;">Stations-service</h2>
-    <button type="button" class="btn btn-primary" onclick="toggleAddStationModal(true)">+ Ajouter une station</button>
+    <button type="button" class="btn btn-primary" id="open-add-station-btn" onclick="toggleAddStationModal(true)">+ Ajouter une station</button>
   </div>
 
   <div style="margin-bottom: 12px;">
@@ -273,57 +275,80 @@
 </div>
 
 <!-- ================= MODAL AJOUT STATION ================= -->
-<div id="add-station-modal" class="modal hidden">
+<div id="add-station-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-station-title">
   <div class="modal-card">
-    <h2 style="margin-top: 0; font-size: 1.2rem; color: var(--pine-dark);">Ajouter une station officielle</h2>
-    <form onsubmit="submitNewStation(event)">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 id="add-station-title" style="margin: 0; font-size: 1.2rem; color: var(--pine-dark);">Ajouter une station officielle</h2>
+      <button type="button" onclick="toggleAddStationModal(false)" aria-label="Fermer" style="background: transparent; border: none; font-size: 1.2rem; color: var(--muted); cursor: pointer; min-height: auto; padding: 4px 8px;">✕</button>
+    </div>
+
+    <div id="add-station-error" class="hidden" style="background: var(--crimson-soft); color: var(--crimson); padding: 10px 12px; border-radius: var(--radius-xs); font-size: 0.85rem; font-weight: 600; margin-bottom: 12px;"></div>
+
+    <form id="add-station-form" action="/api/admin/stations" method="POST" onsubmit="submitNewStation(event)">
       <label>Nom de la station *
-        <input type="text" id="admin_station_name" required placeholder="ex: Kobil Rohero">
+        <input type="text" id="admin_station_name" name="name" required placeholder="ex: Kobil Rohero">
       </label>
       <label>Marque
-        <input type="text" id="admin_station_brand" placeholder="ex: Kobil, InterPetrol, Delta">
+        <input type="text" id="admin_station_brand" name="brand" placeholder="ex: Kobil, InterPetrol, Delta">
       </label>
       <label>Commune *
-        <select id="admin_station_commune" required>
+        <select id="admin_station_commune" name="commune" required>
           <option value="Mukaza">Mukaza</option>
           <option value="Muha">Muha</option>
           <option value="Ntahangwa">Ntahangwa</option>
         </select>
       </label>
       <label>Quartier / Zone *
-        <input type="text" id="admin_station_zone" required placeholder="ex: Rohero, Kinindo, Kigobe">
+        <input type="text" id="admin_station_zone" name="zone" required placeholder="ex: Rohero, Kinindo, Kigobe">
       </label>
       <label>Localisation textuelle *
-        <input type="text" id="admin_station_location" required placeholder="ex: Boulevard de la JRR">
+        <input type="text" id="admin_station_location" name="location_text" required placeholder="ex: Boulevard de la JRR">
       </label>
       <label>Point de repère
-        <input type="text" id="admin_station_landmark" placeholder="ex: En face de la Regideso">
+        <input type="text" id="admin_station_landmark" name="landmark" placeholder="ex: En face de la Regideso">
       </label>
       <label>Types de carburants
-        <input type="text" id="admin_station_fuels" value="Essence,Diesel" placeholder="ex: Essence,Diesel">
+        <input type="text" id="admin_station_fuels" name="fuels" value="Essence,Diesel" placeholder="ex: Essence,Diesel">
       </label>
       <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
         <button type="button" class="btn" onclick="toggleAddStationModal(false)" style="background: var(--surface); border: 1px solid var(--line);">Annuler</button>
-        <button type="submit" class="btn btn-primary">Enregistrer la station</button>
+        <button type="submit" id="submit-station-btn" class="btn btn-primary">Enregistrer la station</button>
       </div>
     </form>
   </div>
 </div>
 
 <script>
-  function showAdminTab(tabName) {
+  function showAdminBanner(msg, isError = false) {
+    const banner = document.getElementById('admin-feedback-banner');
+    if (!banner) return;
+    banner.textContent = msg;
+    banner.style.borderLeftColor = isError ? 'var(--crimson)' : 'var(--emerald-600)';
+    banner.style.color = isError ? 'var(--crimson)' : 'var(--pine-dark)';
+    banner.classList.remove('hidden');
+  }
+
+  function showAdminTab(tabName, btnEl) {
     document.querySelectorAll('.admin-section').forEach(el => el.classList.add('hidden'));
     document.querySelectorAll('.admin-tab-btn').forEach(btn => btn.classList.remove('selected'));
 
     const section = document.getElementById('tab-' + tabName);
     if (section) section.classList.remove('hidden');
 
-    const clickedBtn = event.target;
-    if (clickedBtn) clickedBtn.classList.add('selected');
+    if (btnEl) btnEl.classList.add('selected');
   }
 
   function toggleAddStationModal(show) {
-    document.getElementById('add-station-modal').classList.toggle('hidden', !show);
+    const modal = document.getElementById('add-station-modal');
+    const errEl = document.getElementById('add-station-error');
+    if (errEl) errEl.classList.add('hidden');
+    if (!modal) return;
+    modal.classList.toggle('hidden', !show);
+    if (show) {
+      setTimeout(() => {
+        document.getElementById('admin_station_name')?.focus();
+      }, 50);
+    }
   }
 
   function filterAdminStations(q) {
@@ -338,13 +363,23 @@
   }
 
   async function toggleStationActive(id) {
-    const r = await fetch('/api/admin/stations/' + id + '/toggle', { method: 'POST' });
-    if (r.ok) location.reload();
-    else alert('Erreur lors du changement de statut');
+    const r = await fetch('/api/admin/stations/' + id + '/toggle', {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+    if (r.ok) {
+      location.reload();
+    } else {
+      showAdminBanner('Erreur lors du changement de statut de la station.', true);
+    }
   }
 
   async function submitNewStation(e) {
     e.preventDefault();
+    const errEl = document.getElementById('add-station-error');
+    const submitBtn = document.getElementById('submit-station-btn');
+    if (errEl) errEl.classList.add('hidden');
+
     const payload = {
       name: document.getElementById('admin_station_name').value.trim(),
       brand: document.getElementById('admin_station_brand').value.trim() || null,
@@ -355,48 +390,84 @@
       fuels: document.getElementById('admin_station_fuels').value.trim() || 'Essence,Diesel'
     };
 
-    const r = await fetch('/api/admin/stations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (r.ok) {
-      location.reload();
-    } else {
-      const d = await r.json();
-      alert(d.detail || 'Erreur lors de la création');
+    if (!payload.name || !payload.zone || !payload.location_text) {
+      if (errEl) {
+        errEl.textContent = 'Veuillez remplir le nom, le quartier/zone et la localisation de la station.';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Enregistrement…';
+    }
+
+    try {
+      const r = await fetch('/api/admin/stations', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        toggleAddStationModal(false);
+        location.reload();
+      } else {
+        if (errEl) {
+          errEl.textContent = d.detail || 'Erreur lors de la création de la station.';
+          errEl.classList.remove('hidden');
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Enregistrer la station';
+        }
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = 'Erreur réseau lors de la création de la station.';
+        errEl.classList.remove('hidden');
+      }
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Enregistrer la station';
+      }
     }
   }
 
   async function moderateClaim(id, action) {
-    let reason = '';
-    if (action === 'reject') {
-      reason = prompt('Motif du rejet (facultatif) :') || '';
-    }
     const r = await fetch('/api/admin/claims/' + id + '/moderate', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, reason })
+      body: JSON.stringify({ action, reason: '' })
     });
     if (r.ok) location.reload();
-    else alert('Erreur lors du traitement de la demande');
+    else showAdminBanner('Erreur lors du traitement de la demande.', true);
   }
 
   async function moderateAbuse(id, action) {
     const r = await fetch('/api/admin/abuse/' + id + '/moderate', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action })
     });
     if (r.ok) location.reload();
-    else alert('Erreur lors de la modération');
+    else showAdminBanner('Erreur lors de la modération.', true);
   }
 
   async function toggleSuspendUser(id) {
-    if (!confirm('Changer le statut de cet utilisateur ?')) return;
-    const r = await fetch('/api/admin/users/' + id + '/toggle-suspend', { method: 'POST' });
+    const r = await fetch('/api/admin/users/' + id + '/toggle-suspend', {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
     if (r.ok) location.reload();
-    else alert('Erreur lors de la mise à jour');
+    else showAdminBanner('Erreur lors de la mise à jour de l’utilisateur.', true);
   }
 </script>
 
