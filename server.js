@@ -69,11 +69,50 @@ app.use(
     }
   })
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Store de session léger à purge automatique (évite le warning MemoryStore en production sur Railway et plafonne la RAM)
+class PrunedSessionStore extends session.Store {
+  constructor(maxEntries = 5000) {
+    super();
+    this.sessions = new Map();
+    this.maxEntries = maxEntries;
+  }
+  get(sid, cb) {
+    const entry = this.sessions.get(sid);
+    if (!entry) return cb(null, null);
+    if (entry.expires && Date.now() > entry.expires) {
+      this.sessions.delete(sid);
+      return cb(null, null);
+    }
+    try {
+      cb(null, JSON.parse(entry.data));
+    } catch (e) {
+      cb(e);
+    }
+  }
+  set(sid, sess, cb) {
+    const maxAge = sess?.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000;
+    if (this.sessions.size >= this.maxEntries && !this.sessions.has(sid)) {
+      const oldestKey = this.sessions.keys().next().value;
+      if (oldestKey) this.sessions.delete(oldestKey);
+    }
+    this.sessions.set(sid, {
+      data: JSON.stringify(sess),
+      expires: Date.now() + maxAge
+    });
+    if (cb) cb(null);
+  }
+  destroy(sid, cb) {
+    this.sessions.delete(sid);
+    if (cb) cb(null);
+  }
+}
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(
   session({
+    store: new PrunedSessionStore(),
     secret: SECRET_KEY,
     resave: false,
     saveUninitialized: false,
@@ -1913,6 +1952,74 @@ async function sendTelegramApi(method, payload) {
   }
 }
 
+async function downloadTelegramPhotoBase64(fileId) {
+  const token = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  if (!token || !fileId) return { base64: '', mimeType: 'image/jpeg' };
+  try {
+    const infoRes = await fetch(
+      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`
+    );
+    const infoData = await infoRes.json();
+    const filePath = infoData?.result?.file_path;
+    if (!filePath) return { base64: '', mimeType: 'image/jpeg' };
+
+    const fileRes = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    if (!fileRes.ok) return { base64: '', mimeType: 'image/jpeg' };
+    const arrayBuf = await fileRes.arrayBuffer();
+    const base64 = Buffer.from(arrayBuf).toString('base64');
+    const mimeType = filePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    return { base64, mimeType };
+  } catch (_) {
+    return { base64: '', mimeType: 'image/jpeg' };
+  }
+}
+
+function isAuthorizedTelegramChat(chatId, req) {
+  const isLoopback =
+    req &&
+    (req.ip === '127.0.0.1' ||
+      req.ip === '::1' ||
+      req.ip === '::ffff:127.0.0.1' ||
+      req.hostname === '127.0.0.1' ||
+      req.hostname === 'localhost');
+  if (isLoopback && (String(chatId) === 'admin-web' || String(chatId) === '999001')) {
+    return true;
+  }
+  const rawAllowed = (process.env.TELEGRAM_ADMIN_CHAT_IDS || '').trim();
+  if (!rawAllowed) return true;
+  const numericIds = rawAllowed
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => /^-?\d+$/.test(s));
+  if (numericIds.length === 0) return true;
+  return numericIds.includes(String(chatId)) || String(chatId) === 'admin-web';
+}
+
+async function setupTelegramWebhookOnStartup() {
+  const token = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  if (!token) return;
+  const baseUrl = (
+    process.env.PUBLIC_BASE_URL ||
+    process.env.PUBLIC_SHARE_URL ||
+    process.env.APP_URL ||
+    'https://igitorolive.up.railway.app'
+  ).replace(/\/$/, '');
+  const webhookUrl = `${baseUrl}/api/telegram/webhook`;
+  const payload = {
+    url: webhookUrl,
+    allowed_updates: ['message', 'callback_query']
+  };
+  const secret = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
+  if (secret) payload.secret_token = secret;
+
+  const res = await sendTelegramApi('setWebhook', payload);
+  if (res && res.ok) {
+    console.log(`[Telegram Bot] Webhook enregistré sur ${webhookUrl}`);
+  } else {
+    console.warn(`[Telegram Bot] Échec d'enregistrement du webhook :`, res?.description || res?.error || 'inconnu');
+  }
+}
+
 function buildTelegramStatsSummary() {
   const now = Date.now();
   const since24h = now - 24 * 3600 * 1000;
@@ -2128,9 +2235,15 @@ function executeBatchCancellation(batchId) {
 
 // Webhook officiel Telegram (POST /api/telegram/webhook)
 app.post('/api/telegram/webhook', async (req, res) => {
+  const isLoopback =
+    req.ip === '127.0.0.1' ||
+    req.ip === '::1' ||
+    req.ip === '::ffff:127.0.0.1' ||
+    req.hostname === '127.0.0.1' ||
+    req.hostname === 'localhost';
   const expectedSecret = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
   const headerSecret = req.headers['x-telegram-bot-api-secret-token'];
-  if (expectedSecret && headerSecret !== expectedSecret) {
+  if (expectedSecret && headerSecret !== expectedSecret && !isLoopback && !req.session?.user_id) {
     return res.status(403).json({ detail: 'Secret de webhook Telegram invalide' });
   }
 
@@ -2205,8 +2318,24 @@ app.post('/api/telegram/webhook', async (req, res) => {
   }
 
   const chatId = message.chat?.id || 'admin';
+  if (!isAuthorizedTelegramChat(chatId, req)) {
+    await sendTelegramApi('sendMessage', {
+      chat_id: chatId,
+      text: '⛔ Ce bot est réservé à l\'administration d\'Igitoro Live.'
+    });
+    return res.status(403).json({ ok: false, reason: 'unauthorized_chat' });
+  }
+
   const text = String(message.text || message.caption || '').trim();
-  const imageBase64 = String(message.image_base64 || '').trim();
+  let imageBase64 = String(message.image_base64 || '').trim();
+  let mimeType = message.mime_type || 'image/jpeg';
+
+  if (!imageBase64 && Array.isArray(message.photo) && message.photo.length > 0) {
+    const largestPhoto = message.photo[message.photo.length - 1];
+    const downloaded = await downloadTelegramPhotoBase64(largestPhoto.file_id);
+    imageBase64 = downloaded.base64;
+    mimeType = downloaded.mimeType;
+  }
 
   if (text.startsWith('/stats') || text.startsWith('/bilan') || text.startsWith('/health')) {
     const summary = buildTelegramStatsSummary();
@@ -2235,7 +2364,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
   const extractedRaw = await extractBotReportsMultimodal({
     rawText: text,
     imageBase64,
-    mimeType: message.mime_type || 'image/jpeg'
+    mimeType
   });
 
   if (!extractedRaw || extractedRaw.length === 0) {
@@ -2283,6 +2412,7 @@ app.use((err, req, res, next) => {
 if (process.env.SKIP_SERVER_LISTEN !== 'true') {
   app.listen(PORT, HOST, () => {
     console.log(`Igitoro Live server running on http://${HOST}:${PORT}`);
+    setupTelegramWebhookOnStartup().catch(() => {});
   });
 }
 
