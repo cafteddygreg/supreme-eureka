@@ -1,5 +1,4 @@
 let selectedCommunes = new Set();
-let searchDebounceTimer = null;
 
 function normalizeText(text) {
   return (text || '')
@@ -11,29 +10,25 @@ function normalizeText(text) {
 }
 
 function handleSearch(query) {
+  const searchInput = document.getElementById('stationSearchInput');
+  const val = typeof query === 'string' ? query : (searchInput ? searchInput.value : '');
   const clearBtn = document.getElementById('searchClearBtn');
   if (clearBtn) {
-    if (query && query.trim().length > 0) {
+    if (val && val.trim().length > 0) {
       clearBtn.classList.remove('hidden');
     } else {
       clearBtn.classList.add('hidden');
     }
   }
-
-  clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(() => {
-    applyStationFilters();
-  }, 100);
+  applyStationFilters();
 }
 
 function toggleCommuneFilter(commune) {
   const normalized = commune ? commune.trim() : '';
 
   if (!normalized) {
-    // "Toutes" was clicked -> reset all commune filters
     selectedCommunes.clear();
   } else {
-    // Toggle the selected commune
     if (selectedCommunes.has(normalized)) {
       selectedCommunes.delete(normalized);
     } else {
@@ -60,7 +55,6 @@ function updateCommuneChipUI() {
     const countBadge = chip.querySelector('.chip-count');
 
     if (!chipCommune) {
-      // "Toutes" chip
       if (isAll) {
         chip.classList.add('selected');
         chip.setAttribute('aria-pressed', 'true');
@@ -77,7 +71,6 @@ function updateCommuneChipUI() {
         }
       }
     } else {
-      // Specific commune chip
       const isSelected = selectedCommunes.has(chipCommune);
       if (isSelected) {
         chip.classList.add('selected');
@@ -116,7 +109,7 @@ function clearSearch() {
   if (clearBtn) {
     clearBtn.classList.add('hidden');
   }
-  
+
   selectedCommunes.clear();
   updateCommuneChipUI();
   applyStationFilters();
@@ -140,7 +133,10 @@ function applyStationFilters() {
     const brand = normalizeText(card.dataset.brand || '');
     const commune = normalizeText(card.dataset.commune || '');
     const zone = normalizeText(card.dataset.zone || '');
-    const fullSearch = normalizeText(card.dataset.search || `${name} ${brand} ${commune} ${zone}`);
+    const textContent = normalizeText(card.textContent || '');
+    const fullSearch = normalizeText(
+      card.dataset.search || `${name} ${brand} ${commune} ${zone} ${textContent}`
+    );
 
     // Check commune filter
     let matchesCommune = true;
@@ -154,7 +150,7 @@ function applyStationFilters() {
       }
     }
 
-    // Check query tokens against name, brand, commune, or zone
+    // Check query tokens against name, brand, commune, zone, or card text
     let matchesQuery = true;
     if (queryTokens.length > 0) {
       matchesQuery = queryTokens.every(token => {
@@ -170,6 +166,9 @@ function applyStationFilters() {
 
     const shouldShow = matchesCommune && matchesQuery;
     card.hidden = !shouldShow;
+    card.classList.toggle('hidden', !shouldShow);
+    card.style.display = shouldShow ? '' : 'none';
+
     if (shouldShow) {
       visibleCount++;
     }
@@ -196,3 +195,16 @@ function applyStationFilters() {
     }
   }
 }
+
+// Attacher également les écouteurs directement au champ de recherche dès le chargement
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('stationSearchInput');
+  if (searchInput) {
+    ['input', 'keyup', 'search', 'change'].forEach(evt => {
+      searchInput.addEventListener(evt, () => handleSearch(searchInput.value));
+    });
+    if (searchInput.value) {
+      handleSearch(searchInput.value);
+    }
+  }
+});

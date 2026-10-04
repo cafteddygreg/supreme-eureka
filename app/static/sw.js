@@ -1,11 +1,11 @@
-const CACHE_NAME = 'igitoro-clean-v5';
+const CACHE_NAME = 'igitoro-clean-v6';
 const STATIC_ASSETS = [
-  '/static/css/app.css?v=3',
+  '/static/css/app.css?v=4',
   '/static/css/app.css',
   '/static/css/share.css',
-  '/static/js/search.js',
-  '/static/js/reports.js',
-  '/static/js/profile.js',
+  '/static/js/search.js?v=4',
+  '/static/js/reports.js?v=4',
+  '/static/js/profile.js?v=4',
   '/static/js/share.js',
   '/static/manifest.json?v=3',
   '/static/manifest.json',

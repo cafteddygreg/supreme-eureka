@@ -93,11 +93,107 @@
       <span id="resultsCount"><strong><%= stations.length %></strong> stations répertoriées</span>
       <span id="activeCommuneLabel" style="font-size: 0.8rem; font-weight: 600; color: var(--pine); margin-left: 6px;"></span>
     </div>
-    <a href="/partager" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius-sm); background: var(--pine-50); color: var(--pine-700); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.8rem;">
-      🤝 Partager Igitoro Live
-    </a>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+      <button type="button" id="home-maps-grounding-btn" onclick="searchHomeGoogleMaps()" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; min-height: auto; border-radius: var(--radius-sm); background: var(--surface-subtle); color: var(--pine-dark); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.8rem; cursor: pointer;">
+        📍 Repères Google Maps
+      </button>
+      <a href="/partager" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius-sm); background: var(--pine-50); color: var(--pine-700); border: 1px solid var(--pine-border); font-weight: 700; font-size: 0.8rem;">
+        🤝 Partager Igitoro Live
+      </a>
+    </div>
+  </div>
+
+  <div id="home-maps-grounding-panel" class="hidden" style="margin-top: 12px; padding: 14px; background: var(--pine-50); border: 1px solid var(--pine-border); border-radius: var(--radius-sm);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+      <strong style="font-size: 0.82rem; color: var(--pine-dark); text-transform: uppercase; letter-spacing: 0.04em;">📍 Stations & Repères Google Maps (Bujumbura)</strong>
+      <button type="button" onclick="document.getElementById('home-maps-grounding-panel').classList.add('hidden')" style="background: transparent; border: none; min-height: auto; padding: 2px 6px; color: var(--muted); cursor: pointer;">✕</button>
+    </div>
+    <div id="home-maps-grounding-text" style="font-size: 0.88rem; color: var(--ink); line-height: 1.5; white-space: pre-line;"></div>
+    <div id="home-maps-grounding-links" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;"></div>
+    <div id="home-maps-grounding-reviews" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
   </div>
 </section>
+
+<script>
+  async function searchHomeGoogleMaps() {
+    const panel = document.getElementById('home-maps-grounding-panel');
+    const textEl = document.getElementById('home-maps-grounding-text');
+    const linksEl = document.getElementById('home-maps-grounding-links');
+    const reviewsEl = document.getElementById('home-maps-grounding-reviews');
+    const btn = document.getElementById('home-maps-grounding-btn');
+    const inputVal = (document.getElementById('stationSearchInput')?.value || '').trim();
+    if (!panel || !textEl || !linksEl) return;
+
+    panel.classList.remove('hidden');
+    textEl.textContent = 'Recherche Google Maps à Bujumbura en cours…';
+    linksEl.innerHTML = '';
+    if (reviewsEl) reviewsEl.innerHTML = '';
+    if (btn) btn.disabled = true;
+
+    let coords = { latitude: -3.3822, longitude: 29.3644 };
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 2500, maximumAge: 60000 })
+        );
+        if (pos && pos.coords) {
+          coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        }
+      } catch (_) {}
+    }
+
+    try {
+      const res = await fetch('/api/maps/grounding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: inputVal ? `Station-service ${inputVal} à Bujumbura, Burundi` : 'Stations-service principales et repères routiers à Bujumbura, Burundi',
+          latitude: coords.latitude,
+          longitude: coords.longitude
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        textEl.textContent = data.detail || 'Impossible de charger les données Google Maps.';
+      } else {
+        textEl.textContent = (data.text || '').replace(/\*\*/g, '');
+        const places = Array.isArray(data.places) ? data.places : [];
+        for (const p of places) {
+          if (!p || !p.uri) continue;
+          const a = document.createElement('a');
+          a.href = p.uri;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.className = 'chip';
+          a.style.background = '#ffffff';
+          a.style.color = 'var(--pine-dark)';
+          a.style.borderColor = 'var(--pine-border)';
+          a.style.fontWeight = '700';
+          a.textContent = '🗺️ ' + (p.title || 'Ouvrir sur Google Maps');
+          linksEl.appendChild(a);
+        }
+        const snippets = Array.isArray(data.reviewSnippets) ? data.reviewSnippets : [];
+        if (reviewsEl && snippets.length > 0) {
+          for (const s of snippets) {
+            const a = document.createElement('a');
+            a.href = s.uri || data.fallbackMapUrl || '#';
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.style.fontSize = '0.8rem';
+            a.style.color = 'var(--pine)';
+            a.style.textDecoration = 'underline';
+            a.textContent = '💬 « ' + (s.text || 'Avis Google Maps') + ' »';
+            reviewsEl.appendChild(a);
+          }
+        }
+      }
+    } catch (_) {
+      textEl.textContent = 'Erreur réseau lors de la connexion à Google Maps.';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+</script>
 
 <div id="noResultsMessage" class="card hidden" style="text-align: center; padding: 32px 16px; margin: 16px 0;">
   <p style="font-size: 1.1rem; font-weight: 700; color: var(--pine); margin-bottom: 6px;">Aucune station trouvée</p>

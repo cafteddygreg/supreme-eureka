@@ -11,6 +11,7 @@
     "build": "node -e \"console.log('Build complete')\""
   },
   "dependencies": {
+    "@google/genai": "^2.27.0",
     "cookie-parser": "^1.4.7",
     "ejs": "^3.1.10",
     "express": "^4.21.2",

@@ -527,6 +527,24 @@ async function runTests() {
     assert(data.ok);
   });
 
+  await test('POST /api/maps/grounding fournit les repères et liens Google Maps pour une station', async () => {
+    const res = await fetch(`${BASE_URL}/api/maps/grounding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        station_id: 1,
+        latitude: -3.3822,
+        longitude: 29.3644
+      })
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert(data.ok);
+    assert(typeof data.text === 'string' && data.text.length > 0);
+    assert(Array.isArray(data.places) && data.places.length >= 1);
+    assert(data.places[0].uri.includes('google.com/maps'));
+  });
+
   // ================= 8. Système de Partage Complet =================
   await import('../static/js/share.js');
   const IgitoroShare = globalThis.IgitoroShare;

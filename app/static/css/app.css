@@ -612,7 +612,8 @@ fieldset label {
   margin: 0 auto;
 }
 
-.hidden {
+.hidden,
+[hidden] {
   display: none !important;
 }
 

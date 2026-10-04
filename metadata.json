@@ -1,4 +1,10 @@
 {
   "name": "Igitoro Live",
-  "description": "Plateforme communautaire de suivi de la disponibilité du carburant dans les stations-service à Bujumbura."
+  "description": "Plateforme communautaire de suivi de la disponibilité du carburant dans les stations-service à Bujumbura.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

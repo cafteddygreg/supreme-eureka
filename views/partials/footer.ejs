@@ -57,9 +57,9 @@
     </a>
   </nav>
 
-  <script src="/static/js/search.js" defer></script>
-  <script src="/static/js/reports.js" defer></script>
-  <script src="/static/js/profile.js" defer></script>
+  <script src="/static/js/search.js?v=4" defer></script>
+  <script src="/static/js/reports.js?v=4" defer></script>
+  <script src="/static/js/profile.js?v=4" defer></script>
   <script>
     (function() {
       const path = window.location.pathname;
@@ -98,9 +98,10 @@
 
       if ('caches' in window) {
         caches.delete('igitoro-fast-v3').catch(() => {});
+        caches.delete('igitoro-clean-v5').catch(() => {});
       }
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=5').then((reg) => {
+        navigator.serviceWorker.register('/sw.js?v=6').then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }

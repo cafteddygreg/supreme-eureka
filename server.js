@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { OAuth2Client } from 'google-auth-library';
+import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -900,6 +901,149 @@ app.post('/api/share/event', (req, res) => {
     shareMetrics.by_channel[ch] = (shareMetrics.by_channel[ch] || 0) + 1;
   }
   res.json({ ok: true, metrics: shareMetrics });
+});
+
+// ================= API: Google Maps Grounding =================
+const mapsGroundingCache = new Map();
+
+function getGeminiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build'
+      }
+    }
+  });
+}
+
+app.post('/api/maps/grounding', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const stationId = body.station_id ? parseInt(body.station_id, 10) : null;
+    const rawQuery = String(body.query || '').trim();
+    const station = stationId ? stations.find(s => s.id === stationId) : null;
+
+    // Coordonnées GPS de l'utilisateur ou centre de Bujumbura (-3.3822, 29.3644)
+    const lat = Number.isFinite(Number(body.latitude)) ? Number(body.latitude) : -3.3822;
+    const lng = Number.isFinite(Number(body.longitude)) ? Number(body.longitude) : 29.3644;
+
+    const searchTarget = station
+      ? `${station.name} (${station.brand || 'Station-service'}), quartier ${station.zone}, commune ${station.commune || 'Bujumbura'}, ${station.location_text || ''}, Bujumbura, Burundi`
+      : rawQuery || 'Stations-service à Bujumbura, Burundi';
+
+    const fallbackMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      station ? `${station.name} ${station.zone} Bujumbura Burundi` : `${rawQuery || 'Station service'} Bujumbura Burundi`
+    )}`;
+
+    const cacheKey = `${stationId || ''}:${rawQuery.toLowerCase()}:${lat.toFixed(2)}:${lng.toFixed(2)}`;
+    const cached = mapsGroundingCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+      return res.json(cached.data);
+    }
+
+    const defaultPayload = {
+      ok: true,
+      text: station
+        ? `📍 ${station.name} (${station.brand || 'Station-service'}) est située à ${station.zone} (commune ${station.commune || 'Bujumbura'}) — ${station.location_text}${station.landmark ? ` · Repère : ${station.landmark}` : ''}. Consultez le lien Google Maps ci-dessous pour afficher l'itinéraire exact.`
+        : `Recherche Google Maps pour « ${rawQuery || 'Stations-service à Bujumbura'} ». Ouvrez le lien ci-dessous dans Google Maps.`,
+      places: [
+        {
+          title: station ? `${station.name} (${station.zone}) — Google Maps` : `${rawQuery || 'Stations-service Bujumbura'} — Google Maps`,
+          uri: fallbackMapUrl
+        }
+      ],
+      reviewSnippets: [],
+      fallbackMapUrl
+    };
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.json(defaultPayload);
+    }
+
+    const prompt = station
+      ? `Donne des informations géographiques précises et utiles en français (accès, avenues proches, points de repère connus à Bujumbura) pour la station-service suivante : ${searchTarget}. Reste concis (3 à 5 phrases claires) et ne promets jamais de disponibilité de stock de carburant.`
+      : `En français, aide un automobiliste à Bujumbura (Burundi) pour la recherche suivante sur Google Maps : "${searchTarget}". Indique les emplacements, avenues, quartiers et points de repère utiles de manière concise (3 à 5 phrases).`;
+
+    const requestConfig = {
+      tools: [{ googleMaps: {} }],
+      toolConfig: {
+        retrievalConfig: {
+          latLng: {
+            latitude: lat,
+            longitude: lng
+          }
+        }
+      }
+    };
+
+    let response = null;
+    for (const modelName of ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest']) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: requestConfig
+        });
+        if (response) break;
+      } catch (_) {}
+    }
+
+    if (!response) {
+      return res.json(defaultPayload);
+    }
+
+    const text = response.text || '';
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const places = [];
+    const reviewSnippets = [];
+
+    for (const chunk of chunks) {
+      if (chunk && chunk.maps) {
+        if (chunk.maps.uri) {
+          places.push({
+            title: chunk.maps.title || 'Voir sur Google Maps',
+            uri: chunk.maps.uri
+          });
+        }
+        const snippets = chunk.maps.placeAnswerSources?.reviewSnippets;
+        if (Array.isArray(snippets)) {
+          for (const s of snippets) {
+            if (s && (s.content || s.text || s.uri)) {
+              reviewSnippets.push({
+                text: s.content || s.text || 'Avis Google Maps',
+                uri: s.uri || chunk.maps.uri || fallbackMapUrl
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (places.length === 0) {
+      places.push({
+        title: station ? `${station.name} (${station.zone}) — Ouvrir dans Google Maps` : `Voir « ${rawQuery || 'Stations Bujumbura'} » sur Google Maps`,
+        uri: fallbackMapUrl
+      });
+    }
+
+    const resultPayload = {
+      ok: true,
+      text,
+      places,
+      reviewSnippets,
+      fallbackMapUrl
+    };
+    mapsGroundingCache.set(cacheKey, { ts: Date.now(), data: resultPayload });
+    res.json(resultPayload);
+  } catch (err) {
+    res.status(500).json({
+      detail: err.message || 'Erreur lors de la récupération des données Google Maps.'
+    });
+  }
 });
 
 // ================= API: Stations =================
