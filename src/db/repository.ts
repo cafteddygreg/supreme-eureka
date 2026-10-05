@@ -14,8 +14,10 @@ import {
 import { getOrCreateUser } from './users.ts';
 
 export function isPostgresConfigured(): boolean {
+  const dbUrl = (process.env.DATABASE_URL || '').trim();
+  const hasValidDbUrl = Boolean(dbUrl && !dbUrl.includes('@db:'));
   return Boolean(
-    process.env.DATABASE_URL ||
+    hasValidDbUrl ||
       (process.env.SQL_HOST && process.env.SQL_DB_NAME && process.env.SQL_USER)
   );
 }
@@ -25,6 +27,13 @@ let schemaBootstrapped = false;
 export async function ensureDatabaseTablesExist(): Promise<void> {
   if (schemaBootstrapped || !isPostgresConfigured()) return;
   try {
+    const check = await pool.query(
+      `SELECT to_regclass('public.stations') AS existing_table;`
+    );
+    if (check.rows?.[0]?.existing_table) {
+      schemaBootstrapped = true;
+      return;
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,

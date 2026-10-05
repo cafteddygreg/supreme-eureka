@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx server.js",
     "start": "tsx server.js",
+    "seed": "tsx src/db/seed.ts",
     "test": "tsx test/test_app.js",
     "build": "node -e \"console.log('Build complete')\""
   },
