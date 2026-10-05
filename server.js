@@ -10,6 +10,29 @@ import { fileURLToPath } from 'url';
 import { OAuth2Client } from 'google-auth-library';
 import { GoogleGenAI, Type } from '@google/genai';
 import Tesseract from 'tesseract.js';
+import firebaseConfig from './firebase-applet-config.json';
+import { adminAuth } from './src/lib/firebase-admin.ts';
+import {
+  isPostgresConfigured,
+  getAllDatabaseSnapshots,
+  getOrCreateUser,
+  insertStationInDb,
+  updateStationActiveInDb,
+  updateStationVerificationInDb,
+  insertReportInDb,
+  markReportDeletedInDb,
+  insertConfirmationInDb,
+  insertAbuseReportInDb,
+  updateAbuseReportInDb,
+  insertStationClaimInDb,
+  updateStationClaimInDb,
+  updateUserSuspensionInDb,
+  insertZoneSubscriptionInDb,
+  deleteZoneSubscriptionInDb,
+  insertActionLogInDb,
+  saveTelegramPendingBatchInDb,
+  updateTelegramBatchStatusInDb
+} from './src/db/repository.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -269,8 +292,21 @@ export async function verifyGoogleOidcToken(credential) {
     }
   }
 
+  // Vérification Firebase Auth (si le jeton provient de Firebase Google Sign-In)
+  try {
+    const decodedFirebase = await adminAuth.verifyIdToken(rawToken);
+    if (decodedFirebase && decodedFirebase.uid) {
+      return {
+        sub: decodedFirebase.uid,
+        email: decodedFirebase.email || null,
+        email_verified: Boolean(decodedFirebase.email_verified),
+        name: decodedFirebase.name || 'Utilisateur Google'
+      };
+    }
+  } catch (_) {}
+
   // Vérification officielle Google OAuth 2.0 / OpenID Connect (RS256 JWKS Google)
-  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientId = process.env.GOOGLE_CLIENT_ID || firebaseConfig.oAuthClientId;
   if (!clientId) {
     const err = new Error('GOOGLE_CLIENT_ID non configuré sur le serveur pour vérifier le jeton Google OIDC.');
     err.status = 401;
@@ -378,6 +414,16 @@ function findOrCreateGoogleUser(verifiedProfile) {
     if (shouldGrantAdmin(sub, email)) {
       user.is_admin = true;
     }
+  }
+
+  if (isPostgresConfigured()) {
+    getOrCreateUser(sub, email || `${sub}@igitoro.bi`, user.name, Boolean(user.is_admin))
+      .then(dbUser => {
+        if (dbUser && dbUser.id) {
+          user.db_id = dbUser.id;
+        }
+      })
+      .catch(err => console.warn('[PostgreSQL Sync User]:', err.message));
   }
 
   return { user, isNewUser };
@@ -489,7 +535,7 @@ const fuelTypeLabels = {
 
 function logAction(req, action, targetType, targetId, details) {
   const admin = getCurrentUser(req);
-  actionLogs.push({
+  const entry = {
     id: actionLogs.length + 1,
     admin_id: admin ? admin.id : null,
     admin_name: admin ? admin.name : 'Système',
@@ -498,8 +544,171 @@ function logAction(req, action, targetType, targetId, details) {
     target_id: targetId,
     details,
     created_at: new Date().toISOString()
-  });
+  };
+  actionLogs.push(entry);
+
+  if (isPostgresConfigured()) {
+    insertActionLogInDb({
+      adminId: entry.admin_id,
+      adminName: entry.admin_name,
+      action: entry.action,
+      targetType: entry.target_type ? String(entry.target_type) : null,
+      targetId: entry.target_id !== undefined && entry.target_id !== null ? String(entry.target_id) : null,
+      details: entry.details || null
+    }).catch(err => console.warn('[PostgreSQL Sync ActionLog]:', err.message));
+  }
 }
+
+let pgHydrated = false;
+let pgHydratePromise = null;
+
+async function ensurePostgresHydrated() {
+  if (pgHydrated || !isPostgresConfigured()) return;
+  if (pgHydratePromise) return pgHydratePromise;
+
+  pgHydratePromise = (async () => {
+    try {
+      const snap = await getAllDatabaseSnapshots();
+      if (snap.users && snap.users.length > 0) {
+        for (const u of snap.users) {
+          const exists = users.find(x => x.google_sub === u.uid || x.id === u.id);
+          if (!exists) {
+            users.push({
+              id: u.id,
+              google_sub: u.uid,
+              name: u.name,
+              email: u.email,
+              reputation_score: parseFloat(u.reputationScore || '5.0'),
+              badge: u.badge || 'Contributeur',
+              is_admin: Boolean(u.isAdmin),
+              is_suspended: Boolean(u.isSuspended),
+              created_at: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString()
+            });
+          }
+          if (u.id >= nextUserId) nextUserId = u.id + 1;
+        }
+      } else {
+        for (const u of users) {
+          await getOrCreateUser(u.google_sub, u.email || 'admin@igitoro.bi', u.name, Boolean(u.is_admin));
+        }
+      }
+
+      if (snap.stations && snap.stations.length > 0) {
+        stations.length = 0;
+        for (const s of snap.stations) {
+          stations.push({
+            id: s.id,
+            name: s.name,
+            brand: s.brand,
+            commune: s.commune || 'Mukaza',
+            zone: s.zone,
+            location_text: s.locationText,
+            landmark: s.landmark,
+            fuels: s.fuels || 'Essence,Diesel',
+            is_active: Boolean(s.isActive),
+            is_verified: Boolean(s.isVerified),
+            verified_label: s.verifiedLabel,
+            created_at: s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString()
+          });
+          if (s.id >= nextStationId) nextStationId = s.id + 1;
+        }
+      } else {
+        for (const s of initialStations) {
+          await insertStationInDb({
+            name: s.name,
+            brand: s.brand,
+            commune: s.commune,
+            zone: s.zone,
+            locationText: s.location_text,
+            landmark: s.landmark,
+            fuels: s.fuels,
+            isActive: s.is_active,
+            isVerified: s.is_verified,
+            verifiedLabel: s.verified_label || null
+          });
+        }
+      }
+
+      if (snap.reports && snap.reports.length > 0) {
+        for (const r of snap.reports) {
+          if (!reports.some(x => x.id === r.id)) {
+            reports.push({
+              id: r.id,
+              station_id: r.stationId,
+              user_id: r.userId,
+              fuel_status: r.fuelStatus,
+              fuel_type: r.fuelType || 'unspecified',
+              queue_status: r.queueStatus || 'unknown',
+              queue_bucket: r.queueBucket,
+              wait_bucket: r.waitBucket,
+              comment: r.comment,
+              photo_path: r.photoPath,
+              source: r.source || 'web',
+              is_deleted: Boolean(r.isDeleted),
+              created_at: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString()
+            });
+          }
+          if (r.id >= nextReportId) nextReportId = r.id + 1;
+        }
+      }
+
+      if (snap.confirmations && snap.confirmations.length > 0) {
+        for (const c of snap.confirmations) {
+          if (!confirmations.some(x => x.id === c.id)) {
+            confirmations.push({
+              id: c.id,
+              report_id: c.reportId,
+              user_id: c.userId,
+              kind: c.kind,
+              created_at: c.createdAt ? new Date(c.createdAt).toISOString() : new Date().toISOString()
+            });
+          }
+          if (c.id >= nextConfirmationId) nextConfirmationId = c.id + 1;
+        }
+      }
+
+      if (snap.telegramPendingBatches && snap.telegramPendingBatches.length > 0) {
+        for (const b of snap.telegramPendingBatches) {
+          if (!telegramPendingBatches.has(b.id)) {
+            let parsedItems = [];
+            try {
+              parsedItems = JSON.parse(b.extractedItemsJson || '[]');
+            } catch (_) {}
+            telegramPendingBatches.set(b.id, {
+              id: b.id,
+              chat_id: b.chatId,
+              source_type: b.sourceType,
+              engine: b.engine,
+              deciphered_text: b.decipheredText,
+              raw_input: b.rawInput,
+              extracted_items: parsedItems,
+              summary_html: b.summaryHtml,
+              status: b.status,
+              created_at: b.createdAt ? new Date(b.createdAt).toISOString() : new Date().toISOString(),
+              resolved_at: b.resolvedAt ? new Date(b.resolvedAt).toISOString() : null
+            });
+          }
+        }
+      }
+
+      pgHydrated = true;
+    } catch (err) {
+      console.warn('[PostgreSQL Initial Sync Warning]:', err.message);
+    } finally {
+      pgHydratePromise = null;
+    }
+  })();
+
+  return pgHydratePromise;
+}
+
+app.use((req, res, next) => {
+  if (!pgHydrated && isPostgresConfigured()) {
+    ensurePostgresHydrated().finally(() => next());
+  } else {
+    next();
+  }
+});
 
 // Aggregator
 function freshness(dateStr) {
@@ -554,8 +763,20 @@ function getCurrentUser(req) {
   return u;
 }
 
-function requireAuth(req, res, next) {
-  const user = getCurrentUser(req);
+async function requireAuth(req, res, next) {
+  let user = getCurrentUser(req);
+  if (!user) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split('Bearer ')[1];
+      try {
+        const verifiedProfile = await verifyGoogleOidcToken(token);
+        const found = findOrCreateGoogleUser(verifiedProfile);
+        user = found.user;
+        if (req.session) req.session.user_id = user.id;
+      } catch (_) {}
+    }
+  }
   if (!user) {
     return res.status(401).json({ detail: 'Authentification Google requise. Veuillez vous connecter dans l’onglet Profil.' });
   }
@@ -946,8 +1167,28 @@ app.post('/api/share/event', (req, res) => {
 // ================= API: Google Maps Grounding =================
 const mapsGroundingCache = new Map();
 
-function getGeminiClient() {
-  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+// Circuit-breaker & Cooldown de quota par modèle Gemini (évite de retenter un modèle en 429 ou 404 à chaque requête)
+const geminiModelCooldownUntil = new Map();
+
+export function getGeminiApiKeys() {
+  const raw = [
+    process.env.GEMINI_API_KEYS || '',
+    process.env.GEMINI_API_KEY || '',
+    process.env.GOOGLE_API_KEY || ''
+  ].join(',');
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map(k => k.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function getGeminiClient(specificKey = '') {
+  const keys = getGeminiApiKeys();
+  const apiKey = specificKey || keys[0] || '';
   if (!apiKey) return null;
   return new GoogleGenAI({
     apiKey,
@@ -957,6 +1198,47 @@ function getGeminiClient() {
       }
     }
   });
+}
+
+function isGeminiModelAvailable(modelName, keyIndex = 0) {
+  const cooldownKey = `${modelName}#${keyIndex}`;
+  const until = geminiModelCooldownUntil.get(cooldownKey) || 0;
+  return Date.now() >= until;
+}
+
+function recordGeminiModelFailure(modelName, keyIndex, err) {
+  const msg = String(err?.message || err || '');
+  const cooldownKey = `${modelName}#${keyIndex}`;
+
+  if (msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('no longer available')) {
+    // Modèle retiré ou inexistant : désactiver pour 24h sans polluer les logs en boucle
+    geminiModelCooldownUntil.set(cooldownKey, Date.now() + 24 * 3600 * 1000);
+    return 'not_found';
+  }
+
+  if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Quota exceeded')) {
+    // Extraire retryDelay si présent (ex: "retryDelay":"10674s"), sinon pause de 30 minutes sur ce modèle
+    const delayMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+    const delaySec = delayMatch ? Math.min(parseInt(delayMatch[1], 10), 7200) : 1800;
+    geminiModelCooldownUntil.set(cooldownKey, Date.now() + delaySec * 1000);
+
+    // Si gemini-3.8-flash est en 429, gemini-flash-latest pointe vers le même quota : mettre les deux en pause
+    if (modelName === 'gemini-3.8-flash' || msg.includes('model: gemini-3.8-flash')) {
+      geminiModelCooldownUntil.set(`gemini-3.8-flash#${keyIndex}`, Date.now() + delaySec * 1000);
+      geminiModelCooldownUntil.set(`gemini-flash-latest#${keyIndex}`, Date.now() + delaySec * 1000);
+    }
+    console.warn(
+      `[Gemini Quota] Modèle ${modelName} (clé #${keyIndex + 1}) a atteint la limite Free Tier (20 req/jour). Bascule automatique sur gemini-3.1-flash-lite / OCR pendant ${Math.round(delaySec / 60)} min.`
+    );
+    return 'quota_exceeded';
+  }
+
+  if (msg.includes('503') || msg.includes('UNAVAILABLE')) {
+    geminiModelCooldownUntil.set(cooldownKey, Date.now() + 60 * 1000);
+    return 'unavailable';
+  }
+
+  return 'other';
 }
 
 app.post('/api/maps/grounding', async (req, res) => {
@@ -1021,15 +1303,24 @@ app.post('/api/maps/grounding', async (req, res) => {
     };
 
     let response = null;
-    for (const modelName of ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest']) {
-      try {
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: prompt,
-          config: requestConfig
-        });
-        if (response) break;
-      } catch (_) {}
+    const apiKeys = getGeminiApiKeys();
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+    outerMapsLoop: for (let kIdx = 0; kIdx < apiKeys.length; kIdx++) {
+      const client = getGeminiClient(apiKeys[kIdx]);
+      if (!client) continue;
+      for (const modelName of candidateModels) {
+        if (!isGeminiModelAvailable(modelName, kIdx)) continue;
+        try {
+          response = await client.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: requestConfig
+          });
+          if (response) break outerMapsLoop;
+        } catch (err) {
+          recordGeminiModelFailure(modelName, kIdx, err);
+        }
+      }
     }
 
     if (!response) {
@@ -1151,6 +1442,19 @@ app.post('/api/stations', requireAuth, (req, res) => {
     created_at: new Date().toISOString()
   };
   stations.push(station);
+  if (isPostgresConfigured()) {
+    insertStationInDb({
+      name: station.name,
+      brand: station.brand,
+      commune: station.commune,
+      zone: station.zone,
+      locationText: station.location_text,
+      landmark: station.landmark,
+      fuels: station.fuels,
+      isActive: station.is_active,
+      isVerified: station.is_verified
+    }).catch(err => console.warn('[PostgreSQL Insert Station]:', err.message));
+  }
   logAction(req, 'Station proposée par la communauté', 'station', station.id, `${station.name} (${station.zone})`);
   res.json({ ok: true, station_id: station.id });
 });
@@ -1182,6 +1486,16 @@ app.post('/api/stations/:id/claim', requireAuth, (req, res) => {
     created_at: new Date().toISOString()
   };
   stationClaims.push(claim);
+  if (isPostgresConfigured()) {
+    insertStationClaimInDb({
+      stationId: claim.station_id,
+      userId: claim.user_id,
+      contactName: claim.contact_name,
+      phone: claim.phone,
+      role: claim.role,
+      proofDetails: claim.proof_details
+    }).catch(err => console.warn('[PostgreSQL Insert Claim]:', err.message));
+  }
 
   logAction(req, 'Demande de revendication', 'station', stationId, `Déposée par ${contact_name} (${role})`);
   res.json({ ok: true, claim_id: claim.id });
@@ -1245,6 +1559,18 @@ app.post('/api/reports', requireAuth, upload.single('photo'), (req, res) => {
     is_deleted: false
   };
   reports.push(report);
+  if (isPostgresConfigured()) {
+    insertReportInDb({
+      stationId: report.station_id,
+      userId: report.user_id,
+      fuelStatus: report.fuel_status,
+      fuelType: report.fuel_type,
+      queueStatus: report.queue_status,
+      comment: report.comment,
+      photoPath: report.photo_path,
+      source: 'web'
+    }).catch(err => console.warn('[PostgreSQL Insert Report]:', err.message));
+  }
 
   res.json({ ok: true, report_id: report.id });
 });
@@ -1271,6 +1597,11 @@ app.post('/api/reports/:id/verify', requireAuth, (req, res) => {
       created_at: new Date().toISOString()
     });
   }
+  if (isPostgresConfigured()) {
+    insertConfirmationInDb(reportId, req.user.id, kind).catch(err =>
+      console.warn('[PostgreSQL Insert Confirmation]:', err.message)
+    );
+  }
   res.json({ ok: true });
 });
 
@@ -1281,6 +1612,9 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
     return res.status(404).json({ detail: 'Signalement introuvable ou non autorisé' });
   }
   r.is_deleted = true;
+  if (isPostgresConfigured()) {
+    markReportDeletedInDb(reportId).catch(err => console.warn('[PostgreSQL Delete Report]:', err.message));
+  }
   res.json({ ok: true });
 });
 
@@ -1302,6 +1636,14 @@ app.post('/api/reports/:id/abuse', requireAuth, (req, res) => {
     status: 'pending',
     created_at: new Date().toISOString()
   });
+  if (isPostgresConfigured()) {
+    insertAbuseReportInDb({
+      reportId,
+      reporterId: req.user.id,
+      reason: req.body.reason || 'Autre',
+      details: (req.body.details || '').trim() || null
+    }).catch(err => console.warn('[PostgreSQL Insert Abuse]:', err.message));
+  }
 
   res.json({ ok: true });
 });
@@ -1542,6 +1884,11 @@ app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
       zone,
       created_at: new Date().toISOString()
     });
+    if (isPostgresConfigured()) {
+      insertZoneSubscriptionInDb(req.user.id, zone).catch(err =>
+        console.warn('[PostgreSQL Insert ZoneSub]:', err.message)
+      );
+    }
   }
   res.json({ ok: true, subscribed: true, zone });
 });
@@ -1551,6 +1898,11 @@ app.post('/api/notifications/unsubscribe', requireAuth, (req, res) => {
   const idx = zoneSubscriptions.findIndex(z => z.user_id === req.user.id && z.zone === zone);
   if (idx !== -1) {
     zoneSubscriptions.splice(idx, 1);
+    if (isPostgresConfigured()) {
+      deleteZoneSubscriptionInDb(req.user.id, zone).catch(err =>
+        console.warn('[PostgreSQL Delete ZoneSub]:', err.message)
+      );
+    }
   }
   res.json({ ok: true, subscribed: false, zone });
 });
@@ -1588,6 +1940,20 @@ app.post('/api/admin/stations', requireAdmin, (req, res) => {
   };
 
   stations.push(s);
+  if (isPostgresConfigured()) {
+    insertStationInDb({
+      name: s.name,
+      brand: s.brand,
+      commune: s.commune,
+      zone: s.zone,
+      locationText: s.location_text,
+      landmark: s.landmark,
+      fuels: s.fuels,
+      isActive: s.is_active,
+      isVerified: s.is_verified,
+      verifiedLabel: s.verified_label
+    }).catch(err => console.warn('[PostgreSQL Admin Insert Station]:', err.message));
+  }
   logAction(req, 'Station officielle ajoutée', 'station', s.id, `${s.name} (${s.zone})`);
 
   const acceptsJson = (req.headers.accept || '').includes('application/json') || req.is('application/json');
@@ -1601,6 +1967,11 @@ app.post('/api/admin/stations/:id/toggle', requireAdmin, (req, res) => {
   const s = stations.find(x => x.id === parseInt(req.params.id, 10));
   if (!s) return res.status(404).json({ detail: 'Station introuvable' });
   s.is_active = !s.is_active;
+  if (isPostgresConfigured()) {
+    updateStationActiveInDb(s.id, s.is_active).catch(err =>
+      console.warn('[PostgreSQL Toggle Station]:', err.message)
+    );
+  }
   logAction(req, s.is_active ? 'Station activée' : 'Station désactivée', 'station', s.id, s.name);
   res.json({ ok: true, active: s.is_active });
 });
@@ -2070,16 +2441,22 @@ async function runRealOpticalOcr(cleanBase64) {
   if (!cleanBase64) return '';
   try {
     const imgBuffer = Buffer.from(cleanBase64, 'base64');
-    const result = await Tesseract.recognize(imgBuffer, 'fra');
+    const result = await Tesseract.recognize(imgBuffer, 'fra+eng');
     return String(result?.data?.text || '').trim();
   } catch (err) {
-    console.warn('[Telegram OCR] Erreur Tesseract :', err.message);
-    return '';
+    try {
+      const imgBuffer = Buffer.from(cleanBase64, 'base64');
+      const result = await Tesseract.recognize(imgBuffer, 'fra');
+      return String(result?.data?.text || '').trim();
+    } catch (innerErr) {
+      console.warn('[Telegram OCR] Erreur Tesseract :', innerErr.message);
+      return '';
+    }
   }
 }
 
 async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mimeType = 'image/jpeg' }) {
-  const ai = getGeminiClient();
+  const apiKeys = getGeminiApiKeys();
   const cleanBase64 = String(imageBase64 || '')
     .replace(/^data:[^;]+;base64,/, '')
     .replace(/\s+/g, '')
@@ -2096,7 +2473,7 @@ async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mim
     `1. Si une image est fournie, déchiffre RÉELLEMENT et intégralement tout le texte, toutes les lignes et toutes les stations écrites sur l'image et place cette transcription dans "transcribed_text".\n` +
     `2. Extrais TOUTES les stations-service mentionnées dans l'image ou le texte, MÊME SI elles ne figurent pas encore dans le catalogue officiel (car le système va créer automatiquement les nouvelles stations dans la base de données après confirmation de l'administrateur).\n` +
     `3. Pour chaque station détectée, renseigne :\n` +
-    `   - station_name : nom complet de la station tel que lu (ex: "Kobil Gihosha", "InterPetrol Brasserie", "Station Tanganyika Ruziba")\n` +
+    `   - station_name : nom COMPLET et EXACT de la station tel que lu mot pour mot, en conservant absolument tous les mots ou identifiants de succursale (ex: "Kobil Gihosha Nord", "InterPetrol Brasserie", "Station Tanganyika Ruziba")\n` +
     `   - brand : marque de la station si identifiable (ex: "Kobil", "InterPetrol", "Mogas", "Engen", "TotalEnergies", "Delta", "City Oil", "Rubis", etc., sinon "")\n` +
     `   - zone : quartier ou zone à Bujumbura (ex: "Gihosha", "Kinindo", "Rohero", "Ruziba", "Kajaga", "Kamenge", "Mutanga", "Ngagara", etc.)\n` +
     `   - commune : commune de Bujumbura ("Mukaza", "Ntahangwa" ou "Muha")\n` +
@@ -2106,7 +2483,11 @@ async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mim
     `   - details : détails exacts lus sur la ligne (type de carburant, file d'attente, observations).\n` +
     `Catalogue actuel des stations déjà enregistrées (à titre de référence uniquement, n'ignore JAMAIS une station absente de cette liste) : ${catalog}.`;
 
-  if (ai && (rawText || cleanBase64)) {
+  // Prioriser gemini-3.1-flash-lite qui dispose d'un quota journalier élevé (1500 req/jour)
+  // puis gemini-3.8-flash en second choix (sans dupliquer avec gemini-flash-latest ni appeler gemini-2.5-flash obsolète)
+  const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+
+  if (apiKeys.length > 0 && (rawText || cleanBase64)) {
     const parts = [];
     if (cleanBase64) {
       parts.push({
@@ -2128,76 +2509,95 @@ async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mim
       });
     }
 
-    for (const modelName of ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.1-flash-lite']) {
-      try {
-        const resp = await ai.models.generateContent({
-          model: modelName,
-          contents: [{ role: 'user', parts }],
-          config: {
-            systemInstruction,
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                transcribed_text: {
-                  type: Type.STRING,
-                  description: 'Texte exact déchiffré sur l\'image ou résumé fidèle de ce qui est lu.'
-                },
-                stations: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      station_name: { type: Type.STRING },
-                      brand: { type: Type.STRING },
-                      zone: { type: Type.STRING },
-                      commune: { type: Type.STRING },
-                      location_text: { type: Type.STRING },
-                      fuel_type: { type: Type.STRING },
-                      status: { type: Type.STRING },
-                      details: { type: Type.STRING }
-                    },
-                    required: ['station_name', 'fuel_type', 'status', 'details']
-                  }
-                }
-              },
-              required: ['transcribed_text', 'stations']
-            }
-          }
-        });
+    for (let kIdx = 0; kIdx < apiKeys.length; kIdx++) {
+      const ai = getGeminiClient(apiKeys[kIdx]);
+      if (!ai) continue;
 
-        const parsed = JSON.parse((resp.text || '{}').trim());
-        const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.stations) ? parsed.stations : [];
-        const transcribedText = typeof parsed.transcribed_text === 'string' ? parsed.transcribed_text.trim() : '';
-
-        if (list.length > 0) {
-          const items = list.map(x => {
-            const inferred = inferNewStationMetadata(x);
-            return {
-              station_name: String(x.station_name || inferred.name).trim(),
-              brand: String(x.brand || inferred.brand || '').trim() || null,
-              zone: String(x.zone || inferred.zone || 'Bujumbura').trim(),
-              commune: String(x.commune || inferred.commune || 'Mukaza').trim(),
-              location_text: String(x.location_text || inferred.location_text).trim(),
-              fuel_type: normalizeBotFuelType(x.fuel_type),
-              status: normalizeBotStatus(x.status),
-              details: String(x.details || '').trim()
-            };
-          });
-          items._meta = {
-            engine: cleanBase64 ? `Gemini Vision IA (${modelName})` : `Gemini IA (${modelName})`,
-            deciphered_text: transcribedText || items.map(i => `${i.station_name} (${i.fuel_type})`).join(' | ')
-          };
-          return items;
+      for (const modelName of candidateModels) {
+        if (!isGeminiModelAvailable(modelName, kIdx)) {
+          continue;
         }
-      } catch (err) {
-        console.warn(`[Telegram Vision] Modèle ${modelName} indisponible :`, err.message);
+        try {
+          const resp = await ai.models.generateContent({
+            model: modelName,
+            contents: [{ role: 'user', parts }],
+            config: {
+              systemInstruction,
+              temperature: 0.1,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  transcribed_text: {
+                    type: Type.STRING,
+                    description: 'Texte exact déchiffré sur l\'image ou résumé fidèle de ce qui est lu.'
+                  },
+                  stations: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        station_name: { type: Type.STRING },
+                        brand: { type: Type.STRING },
+                        zone: { type: Type.STRING },
+                        commune: { type: Type.STRING },
+                        location_text: { type: Type.STRING },
+                        fuel_type: { type: Type.STRING },
+                        status: { type: Type.STRING },
+                        details: { type: Type.STRING }
+                      },
+                      required: ['station_name', 'fuel_type', 'status', 'details']
+                    }
+                  }
+                },
+                required: ['transcribed_text', 'stations']
+              }
+            }
+          });
+
+          const parsed = JSON.parse((resp.text || '{}').trim());
+          const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.stations) ? parsed.stations : [];
+          const transcribedText = typeof parsed.transcribed_text === 'string' ? parsed.transcribed_text.trim() : '';
+
+          if (list.length > 0) {
+            const rawLines = rawText
+              ? rawText
+                  .split(/\r?\n/)
+                  .map(l => l.replace(/^[\s\-•*0-9.)]+/, '').split(/[:\-–—(|]/)[0].trim())
+                  .filter(Boolean)
+              : [];
+
+            const items = list.map((x, idx) => {
+              let stName = String(x.station_name || '').trim();
+              if (rawLines[idx] && stName && rawLines[idx].toLowerCase().startsWith(stName.toLowerCase()) && rawLines[idx].length > stName.length) {
+                stName = rawLines[idx];
+              }
+              const inferred = inferNewStationMetadata({ ...x, station_name: stName });
+              return {
+                station_name: stName || inferred.name,
+                brand: String(x.brand || inferred.brand || '').trim() || null,
+                zone: String(x.zone || inferred.zone || 'Bujumbura').trim(),
+                commune: String(x.commune || inferred.commune || 'Mukaza').trim(),
+                location_text: String(x.location_text || inferred.location_text).trim(),
+                fuel_type: normalizeBotFuelType(x.fuel_type),
+                status: normalizeBotStatus(x.status),
+                details: String(x.details || '').trim()
+              };
+            });
+            items._meta = {
+              engine: cleanBase64 ? `Gemini Vision IA (${modelName})` : `Gemini IA (${modelName})`,
+              deciphered_text: transcribedText || items.map(i => `${i.station_name} (${i.fuel_type})`).join(' | ')
+            };
+            return items;
+          }
+        } catch (err) {
+          recordGeminiModelFailure(modelName, kIdx, err);
+        }
       }
     }
   }
 
-  // Si une image a été envoyée mais que Gemini Vision n'est pas configuré ou a échoué,
+  // Si une image a été envoyée mais que Gemini Vision est en quota dépassé ou indisponible,
   // exécuter une lecture optique réelle des pixels (OCR Tesseract.js) !
   let ocrText = '';
   if (cleanBase64) {
@@ -2209,8 +2609,8 @@ async function extractBotReportsMultimodal({ rawText = '', imageBase64 = '', mim
   fallbackItems._meta = {
     engine: cleanBase64
       ? ocrText
-        ? 'OCR Optique Réel (Tesseract)'
-        : 'Aucun moteur Vision actif (vérifiez GEMINI_API_KEY)'
+        ? 'OCR Optique Local (Tesseract — Relais anti-quota 429)'
+        : 'Quota Gemini Free Tier atteint (20 req/j) — Relais OCR'
       : 'Analyseur Heuristique Texte',
     deciphered_text: ocrText
   };
@@ -2467,6 +2867,19 @@ function createPendingTelegramBatch({ chatId, sourceType, rawInput, extractedRaw
   };
 
   telegramPendingBatches.set(batchId, batch);
+  if (isPostgresConfigured()) {
+    saveTelegramPendingBatchInDb({
+      id: batch.id,
+      chatId: batch.chat_id,
+      sourceType: batch.source_type,
+      engine: batch.engine,
+      decipheredText: batch.deciphered_text,
+      rawInput: batch.raw_input,
+      extractedItems: batch.extracted_items,
+      summaryHtml: batch.summary_html,
+      status: batch.status
+    }).catch(err => console.warn('[PostgreSQL Save Pending Batch]:', err.message));
+  }
   return batch;
 }
 
@@ -2528,6 +2941,20 @@ function executeBatchConfirmation(batchId) {
           created_at: nowIso
         };
         stations.push(newStation);
+        if (isPostgresConfigured()) {
+          insertStationInDb({
+            name: newStation.name,
+            brand: newStation.brand,
+            commune: newStation.commune,
+            zone: newStation.zone,
+            locationText: newStation.location_text,
+            landmark: newStation.landmark,
+            fuels: newStation.fuels,
+            isActive: newStation.is_active,
+            isVerified: newStation.is_verified,
+            verifiedLabel: newStation.verified_label
+          }).catch(err => console.warn('[PostgreSQL Bot Insert Station]:', err.message));
+        }
         targetStationId = newStation.id;
         item.station_id = newStation.id;
         createdStationsCount++;
@@ -2543,12 +2970,22 @@ function executeBatchConfirmation(batchId) {
           details: `${newStation.name} — Quartier ${newStation.zone} (${newStation.commune})`,
           created_at: nowIso
         });
+        if (isPostgresConfigured()) {
+          insertActionLogInDb({
+            adminId: adminUser.id,
+            adminName: adminUser.name,
+            action: 'Nouvelle station créée via Bot Telegram',
+            targetType: 'station',
+            targetId: String(newStation.id),
+            details: `${newStation.name} — Quartier ${newStation.zone} (${newStation.commune})`
+          }).catch(() => {});
+        }
       }
     }
 
     if (!targetStationId) continue;
 
-    reports.push({
+    const newRep = {
       id: nextReportId++,
       station_id: targetStationId,
       user_id: adminUser.id,
@@ -2562,13 +2999,36 @@ function executeBatchConfirmation(batchId) {
       source: 'telegram_bot',
       is_deleted: false,
       created_at: nowIso
-    });
+    };
+    reports.push(newRep);
+    if (isPostgresConfigured()) {
+      insertReportInDb({
+        stationId: newRep.station_id,
+        userId: newRep.user_id,
+        fuelStatus: newRep.fuel_status,
+        fuelType: newRep.fuel_type,
+        queueStatus: newRep.queue_status,
+        comment: newRep.comment,
+        source: 'telegram_bot'
+      }).catch(err => console.warn('[PostgreSQL Bot Insert Report]:', err.message));
+    }
     inserted++;
     updatedNames.push(item.matched_name || `Station #${targetStationId}`);
   }
 
   batch.status = 'confirmed';
   batch.resolved_at = nowIso;
+  if (isPostgresConfigured()) {
+    updateTelegramBatchStatusInDb(batchId, 'confirmed').catch(() => {});
+    insertActionLogInDb({
+      adminId: adminUser.id,
+      adminName: adminUser.name,
+      action: `Bot Telegram : Lot ${batchId} confirmé`,
+      targetType: 'telegram_batch',
+      targetId: batchId,
+      details: `${createdStationsCount} nouvelle(s) station(s) créée(s), ${inserted} signalement(s) publié(s) : ${updatedNames.join(', ')}`
+    }).catch(() => {});
+  }
 
   actionLogs.push({
     id: actionLogs.length + 1,
@@ -2610,6 +3070,9 @@ function executeBatchCancellation(batchId) {
   }
   batch.status = 'cancelled';
   batch.resolved_at = new Date().toISOString();
+  if (isPostgresConfigured()) {
+    updateTelegramBatchStatusInDb(batchId, 'cancelled').catch(() => {});
+  }
   return {
     ok: true,
     message: "❌ <b>Opération annulée.</b> Aucun signalement n'a été écrit dans la base de données."

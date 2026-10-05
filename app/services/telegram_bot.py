@@ -413,34 +413,38 @@ async def extract_reports_with_ai(
                     "Extrais toutes les stations-service et types de carburant figurant sur cette fiche de distribution à Bujumbura."
                 )
 
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.1,
-                    response_mime_type="application/json",
-                    response_schema=list[ExtractedStationReport],
-                ),
-            )
-
-            raw_json = (response.text or "[]").strip()
-            parsed = json.loads(raw_json)
-            if isinstance(parsed, list):
-                normalized_list: list[dict[str, Any]] = []
-                for item in parsed:
-                    if not isinstance(item, dict) or not item.get("station_name"):
-                        continue
-                    normalized_list.append(
-                        {
-                            "station_name": str(item.get("station_name", "")).strip(),
-                            "fuel_type": normalize_fuel_type(str(item.get("fuel_type", ""))),
-                            "status": normalize_fuel_status(str(item.get("status", "distribution"))),
-                            "details": str(item.get("details", "")).strip(),
-                        }
+            for model_name in ("gemini-3.1-flash-lite", "gemini-3.8-flash"):
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=0.1,
+                            response_mime_type="application/json",
+                            response_schema=list[ExtractedStationReport],
+                        ),
                     )
-                if normalized_list:
-                    return normalized_list
+
+                    raw_json = (response.text or "[]").strip()
+                    parsed = json.loads(raw_json)
+                    if isinstance(parsed, list):
+                        normalized_list: list[dict[str, Any]] = []
+                        for item in parsed:
+                            if not isinstance(item, dict) or not item.get("station_name"):
+                                continue
+                            normalized_list.append(
+                                {
+                                    "station_name": str(item.get("station_name", "")).strip(),
+                                    "fuel_type": normalize_fuel_type(str(item.get("fuel_type", ""))),
+                                    "status": normalize_fuel_status(str(item.get("status", "distribution"))),
+                                    "details": str(item.get("details", "")).strip(),
+                                }
+                            )
+                        if normalized_list:
+                            return normalized_list
+                except Exception as model_exc:
+                    logger.warning("Modèle %s indisponible : %s", model_name, model_exc)
         except Exception as exc:
             logger.error("Erreur lors de l'extraction Gemini : %s", exc)
 

@@ -5,19 +5,27 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js",
-    "test": "node test/test_app.js",
+    "dev": "tsx server.js",
+    "start": "tsx server.js",
+    "test": "tsx test/test_app.js",
     "build": "node -e \"console.log('Build complete')\""
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
+    "@types/pg": "^8.23.1",
     "cookie-parser": "^1.4.7",
+    "dotenv": "^18.0.5",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.3",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
     "express-session": "^1.18.1",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
     "google-auth-library": "^11.1.0",
     "multer": "^1.4.5-lts.1",
-    "tesseract.js": "^7.0.0"
+    "pg": "^8.23.1",
+    "tesseract.js": "^7.0.0",
+    "tsx": "^4.23.15"
   }
 }
