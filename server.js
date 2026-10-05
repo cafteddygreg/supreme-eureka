@@ -533,6 +533,47 @@ const fuelTypeLabels = {
   unspecified: 'Non précisé'
 };
 
+// ================= SYSTÈME TEMPS RÉEL (SERVER-SENT EVENTS & AUTO-ACTUALISATION) =================
+let liveStateVersion = 1;
+let lastLiveEvent = {
+  version: liveStateVersion,
+  reason: 'init',
+  station_ids: [],
+  ts: new Date().toISOString()
+};
+const sseClients = new Set();
+
+export function broadcastLiveUpdate(reason = 'update', stationIds = []) {
+  liveStateVersion++;
+  lastLiveEvent = {
+    version: liveStateVersion,
+    reason,
+    station_ids: Array.isArray(stationIds) ? stationIds : [stationIds].filter(Boolean),
+    ts: new Date().toISOString()
+  };
+
+  const payload = `event: update\ndata: ${JSON.stringify(lastLiveEvent)}\n\n`;
+  for (const clientRes of sseClients) {
+    try {
+      clientRes.write(payload);
+    } catch (_) {
+      sseClients.delete(clientRes);
+    }
+  }
+}
+
+setInterval(() => {
+  if (sseClients.size === 0) return;
+  const pingPayload = `: heartbeat ${Date.now()}\n\n`;
+  for (const clientRes of sseClients) {
+    try {
+      clientRes.write(pingPayload);
+    } catch (_) {
+      sseClients.delete(clientRes);
+    }
+  }
+}, 20000).unref();
+
 function logAction(req, action, targetType, targetId, details) {
   const admin = getCurrentUser(req);
   const entry = {
@@ -1377,10 +1418,48 @@ app.post('/api/maps/grounding', async (req, res) => {
   }
 });
 
+// ================= API: Temps Réel (SSE & Version) =================
+app.get('/api/live/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.json({
+    ok: true,
+    version: liveStateVersion,
+    last_event: lastLiveEvent,
+    active_stations_count: stations.filter(s => s.is_active).length
+  });
+});
+
+app.get('/api/live/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  const initPayload = {
+    version: liveStateVersion,
+    reason: 'connected',
+    ts: new Date().toISOString()
+  };
+  res.write(`event: connected\ndata: ${JSON.stringify(initPayload)}\n\n`);
+
+  sseClients.add(res);
+  req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
+
 // ================= API: Stations =================
 app.get('/api/stations', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const q = (req.query.q || '').toString().toLowerCase().trim();
-  let list = stations.filter(s => s.is_active);
+  const returnAll = req.query.all === '1' || req.query.all === 'true';
+  let list = stations
+    .filter(s => s.is_active)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   if (q) {
     list = list.filter(
       s =>
@@ -1390,13 +1469,17 @@ app.get('/api/stations', (req, res) => {
         (s.brand && s.brand.toLowerCase().includes(q))
     );
   }
-  const result = list.slice(0, 30).map(s => ({
+  const sliced = returnAll ? list : list.slice(0, 100);
+  const result = sliced.map(s => ({
     id: s.id,
     name: s.name,
     brand: s.brand,
     zone: s.zone,
     commune: s.commune,
     location: s.location_text,
+    location_text: s.location_text,
+    landmark: s.landmark,
+    is_verified: Boolean(s.is_verified),
     state: aggregate(s)
   }));
   res.json(result);
@@ -1456,6 +1539,7 @@ app.post('/api/stations', requireAuth, (req, res) => {
     }).catch(err => console.warn('[PostgreSQL Insert Station]:', err.message));
   }
   logAction(req, 'Station proposée par la communauté', 'station', station.id, `${station.name} (${station.zone})`);
+  broadcastLiveUpdate('station_created', [station.id]);
   res.json({ ok: true, station_id: station.id });
 });
 
@@ -1572,6 +1656,7 @@ app.post('/api/reports', requireAuth, upload.single('photo'), (req, res) => {
     }).catch(err => console.warn('[PostgreSQL Insert Report]:', err.message));
   }
 
+  broadcastLiveUpdate('report_created', [stationId]);
   res.json({ ok: true, report_id: report.id });
 });
 
@@ -1602,6 +1687,7 @@ app.post('/api/reports/:id/verify', requireAuth, (req, res) => {
       console.warn('[PostgreSQL Insert Confirmation]:', err.message)
     );
   }
+  broadcastLiveUpdate('report_verified', [r.station_id]);
   res.json({ ok: true });
 });
 
@@ -1615,6 +1701,7 @@ app.delete('/api/reports/:id', requireAuth, (req, res) => {
   if (isPostgresConfigured()) {
     markReportDeletedInDb(reportId).catch(err => console.warn('[PostgreSQL Delete Report]:', err.message));
   }
+  broadcastLiveUpdate('report_deleted', [r.station_id]);
   res.json({ ok: true });
 });
 
@@ -1955,6 +2042,7 @@ app.post('/api/admin/stations', requireAdmin, (req, res) => {
     }).catch(err => console.warn('[PostgreSQL Admin Insert Station]:', err.message));
   }
   logAction(req, 'Station officielle ajoutée', 'station', s.id, `${s.name} (${s.zone})`);
+  broadcastLiveUpdate('station_created', [s.id]);
 
   const acceptsJson = (req.headers.accept || '').includes('application/json') || req.is('application/json');
   if (!acceptsJson) {
@@ -1973,6 +2061,7 @@ app.post('/api/admin/stations/:id/toggle', requireAdmin, (req, res) => {
     );
   }
   logAction(req, s.is_active ? 'Station activée' : 'Station désactivée', 'station', s.id, s.name);
+  broadcastLiveUpdate('station_toggled', [s.id]);
   res.json({ ok: true, active: s.is_active });
 });
 
@@ -3049,6 +3138,9 @@ function executeBatchConfirmation(batchId) {
     msgLines.push(`• 🆕 <b>${createdStationsCount} nouvelle(s) station(s) créée(s) :</b> ${escapeTelegramHtml(createdStationNames.join(', '))}`);
   }
   msgLines.push(`• ⛽ <b>Stations mises à jour :</b> ${updatedNames.length ? escapeTelegramHtml(updatedNames.join(', ')) : 'Aucune'}`);
+
+  const affectedIds = batch.extracted_items.map(i => i.station_id).filter(Boolean);
+  broadcastLiveUpdate('telegram_batch_confirmed', affectedIds);
 
   return {
     ok: true,

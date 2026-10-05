@@ -914,6 +914,19 @@ async function runTests() {
     assert.strictEqual(createdSt.state.fuel_type, 'essence');
   });
 
+  await test('GET /api/live/version et auto-actualisation temps réel : incrémente la version à chaque mise à jour', async () => {
+    const v1Res = await fetch(`${BASE_URL}/api/live/version`);
+    assert.strictEqual(v1Res.status, 200);
+    const v1Data = await v1Res.json();
+    assert.strictEqual(v1Data.ok, true);
+    assert(typeof v1Data.version === 'number');
+
+    const allStationsRes = await fetch(`${BASE_URL}/api/stations?all=1`);
+    assert.strictEqual(allStationsRes.status, 200);
+    const allStations = await allStationsRes.json();
+    assert(Array.isArray(allStations) && allStations.length >= 28);
+  });
+
   console.log(`\n========================================`);
   console.log(`Résultats : ${passed} passés, ${failed} échoués`);
   console.log(`========================================`);
