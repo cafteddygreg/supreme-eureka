@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { db } from './index.ts';
+import { db, pool } from './index.ts';
 import {
   abuseReports,
   actionLogs,
@@ -14,7 +14,123 @@ import {
 import { getOrCreateUser } from './users.ts';
 
 export function isPostgresConfigured(): boolean {
-  return Boolean(process.env.SQL_HOST && process.env.SQL_DB_NAME && process.env.SQL_USER);
+  return Boolean(
+    process.env.DATABASE_URL ||
+      (process.env.SQL_HOST && process.env.SQL_DB_NAME && process.env.SQL_USER)
+  );
+}
+
+let schemaBootstrapped = false;
+
+export async function ensureDatabaseTablesExist(): Promise<void> {
+  if (schemaBootstrapped || !isPostgresConfigured()) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        uid TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL,
+        name TEXT NOT NULL,
+        reputation_score NUMERIC(4,2) NOT NULL DEFAULT 5.0,
+        badge TEXT NOT NULL DEFAULT 'Contributeur',
+        is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+        is_suspended BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS stations (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        brand TEXT,
+        commune TEXT NOT NULL DEFAULT 'Mukaza',
+        zone TEXT NOT NULL,
+        location_text TEXT NOT NULL,
+        landmark TEXT,
+        fuels TEXT NOT NULL DEFAULT 'Essence,Diesel',
+        latitude NUMERIC(10,6),
+        longitude NUMERIC(10,6),
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+        verified_label TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS reports (
+        id SERIAL PRIMARY KEY,
+        station_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        fuel_status TEXT NOT NULL,
+        fuel_type TEXT NOT NULL DEFAULT 'unspecified',
+        queue_status TEXT NOT NULL DEFAULT 'unknown',
+        queue_bucket TEXT,
+        wait_bucket TEXT,
+        comment TEXT,
+        photo_path TEXT,
+        source TEXT NOT NULL DEFAULT 'web',
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS confirmations (
+        id SERIAL PRIMARY KEY,
+        report_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS abuse_reports (
+        id SERIAL PRIMARY KEY,
+        report_id INTEGER NOT NULL,
+        reporter_id INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        action_taken TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS zone_subscriptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        zone TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS station_claims (
+        id SERIAL PRIMARY KEY,
+        station_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        contact_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        role TEXT NOT NULL,
+        proof_details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        rejection_reason TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS action_logs (
+        id SERIAL PRIMARY KEY,
+        admin_id INTEGER,
+        admin_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target_type TEXT,
+        target_id TEXT,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS telegram_pending_batches (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        engine TEXT,
+        deciphered_text TEXT,
+        raw_input TEXT,
+        extracted_items_json TEXT NOT NULL,
+        summary_html TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        resolved_at TIMESTAMP
+      );
+    `);
+    schemaBootstrapped = true;
+  } catch (err) {
+    console.warn('[PostgreSQL Schema Bootstrap]:', err);
+  }
 }
 
 export async function getAllStationsFromDb() {

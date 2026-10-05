@@ -14,6 +14,7 @@ import firebaseConfig from './firebase-applet-config.json';
 import { adminAuth } from './src/lib/firebase-admin.ts';
 import {
   isPostgresConfigured,
+  ensureDatabaseTablesExist,
   getAllDatabaseSnapshots,
   getOrCreateUser,
   insertStationInDb,
@@ -609,6 +610,7 @@ async function ensurePostgresHydrated() {
 
   pgHydratePromise = (async () => {
     try {
+      await ensureDatabaseTablesExist();
       const snap = await getAllDatabaseSnapshots();
       if (snap.users && snap.users.length > 0) {
         for (const u of snap.users) {
